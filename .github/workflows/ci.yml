@@ -1,0 +1,18 @@
+name: CI
+on:
+  push:
+jobs:
+  test:
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Setup JDK
+      uses: actions/setup-java@v2
+      with:
+        distribution: temurin
+        java-version: 8
+    - name: Simulation
+      run: sbt "runMain wavebpf.WbpfSim"
+    - name: Generate verilog
+      run: sbt "runMain wavebpf.WbpfVerilogSyncReset"
