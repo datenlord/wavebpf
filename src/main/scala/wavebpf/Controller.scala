@@ -15,7 +15,7 @@ case class Controller(
 
   val refillCounter = Reg(UInt(insnBufferConfig.addrWidth bits)) init (0)
   val refillBuffer = Reg(Bits(32 bits))
-  io.pcUpdater.assignDontCare()
+  io.pcUpdater.payload.assignDontCare()
   io.pcUpdater.valid := False
 
   io.refill.setIdle()

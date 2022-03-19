@@ -15,20 +15,19 @@ case class DataMem(c: DataMemConfig) extends Area {
   val dmPort = Wishbone(DataMemWishboneConfig())
 
   val memBody = Mem(Bits(64 bits), c.numWords)
+  memBody.initialContent = (for(i <- 0 until memBody.wordCount) yield BigInt("4343434343434343", 16)).toArray
 
   val ack = RegInit(False)
 
-  dmPort.assignDontCare()
   dmPort.ACK := ack
-
-  when(dmPort.STB) {
-    ack := True
-    val addr = dmPort.ADR(log2Up(c.numWords) - 1 downto 0)
-    memBody.write(address = addr, data = dmPort.DAT_MOSI, enable = dmPort.WE)
-    dmPort.DAT_MISO := memBody.readSync(address = addr)
-  } otherwise {
-    ack := False
-  }
+  val addr = dmPort.ADR(log2Up(c.numWords) - 1 downto 0)
+  dmPort.DAT_MISO := memBody.readSync(address = addr)
+  memBody.write(
+    address = addr,
+    data = dmPort.DAT_MOSI,
+    enable = dmPort.STB && dmPort.WE
+  )
+  ack := dmPort.STB
 
   def use(): Wishbone = {
     val port = Wishbone(DataMemWishboneConfig())

@@ -46,6 +46,7 @@ case class Exec(c: ExecConfig) extends Component {
     val regWriteback = master Flow (RegContext(c.regFetch, Bits(64 bits)))
     val dataMem = master(Wishbone(DataMemWishboneConfig()))
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
+    val excOutput = out(CpuException())
   }
 
   val aluStage = new ExecAluStage(c)
@@ -57,6 +58,7 @@ case class Exec(c: ExecConfig) extends Component {
   memStage.io.output
     .translateWith(memStage.io.output.payload.regWriteback)
     .toFlow >> io.regWriteback
+  io.excOutput := memStage.io.excOutput
 }
 
 case class ExecMemoryStage(c: ExecConfig) extends Component {
@@ -64,17 +66,32 @@ case class ExecMemoryStage(c: ExecConfig) extends Component {
     val aluStage = slave Stream (AluStageInsnContext(c))
     val dataMem = master(Wishbone(DataMemWishboneConfig()))
     val output = master Stream (MemoryStageInsnContext(c))
+    val excOutput = out(CpuException())
   }
 
-  val out = MemoryStageInsnContext(c)
+  val outData = MemoryStageInsnContext(c)
   val memRead = Bits(64 bits)
-  val wasInException = Reg(Bool) init (True) // startup
-  val inException = wasInException && !io.aluStage.payload.insnFetch.ctx.flush
-  wasInException := inException || io.aluStage.payload.exc.valid
+
+  val excRegInit = CpuException()
+  excRegInit.valid := True
+  excRegInit.code := CpuExceptionCode.NOT_INIT
+  excRegInit.data := 0
+
+  val nextExc = CpuException()
+  val excReg = Reg(CpuException()) init(excRegInit)
+  io.excOutput := excReg
+
+  when(!excReg.valid && io.aluStage.payload.exc.valid) {
+    nextExc := io.aluStage.payload.exc
+  } otherwise {
+    nextExc := excReg
+  }
+
+  excReg := nextExc
 
   val fifo = StreamFifoLowLatency(AluStageInsnContext(c), 1)
 
-  fifo.io.push << io.aluStage.throwWhen(inException)
+  fifo.io.push << io.aluStage.throwWhen(nextExc.valid)
   fifo.io.pop.ready := io.output.ready && (!fifo.io.pop.payload.memory.valid || io.dataMem.ACK)
 
   io.dataMem.CYC := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid
@@ -87,16 +104,16 @@ case class ExecMemoryStage(c: ExecConfig) extends Component {
   writebackOverride.index := fifo.io.pop.payload.regWriteback.index
   writebackOverride.data := io.dataMem.DAT_MISO
 
-  out.insnFetch := fifo.io.pop.payload.insnFetch
-  out.regFetch := fifo.io.pop.payload.regFetch
-  out.regWriteback := (fifo.io.pop.payload.memory.valid && !fifo.io.pop.payload.memory.store)
+  outData.insnFetch := fifo.io.pop.payload.insnFetch
+  outData.regFetch := fifo.io.pop.payload.regFetch
+  outData.regWriteback := (fifo.io.pop.payload.memory.valid && !fifo.io.pop.payload.memory.store)
     .mux(
       (False, fifo.io.pop.payload.regWriteback),
       (True, writebackOverride)
     )
-  out.exc := fifo.io.pop.payload.exc
+  outData.exc := fifo.io.pop.payload.exc
   io.output.valid := fifo.io.pop.valid && fifo.io.pop.ready
-  io.output.payload := out
+  io.output.payload := outData
 }
 
 case class ExecAluStage(c: ExecConfig) extends Component {
@@ -121,7 +138,8 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   }
 
   val exc = CpuException()
-  exc.assignDontCare()
+  exc.code.assignDontCare()
+  exc.data.assignDontCare()
   exc.valid := False
 
   val memory = new MemoryAccessReq()
@@ -156,7 +174,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       // division not implemented
       exc.valid := True
       exc.code := CpuExceptionCode.BAD_INSTRUCTION
-      exc.data := 0
+      exc.data := io.insnFetch.payload.insn.asUInt
     }
     is(M"0100-111") { // 0x47/0x4f, dst |= imm
       regWritebackData.index := rdIndex
@@ -182,7 +200,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       // division not implemented
       exc.valid := True
       exc.code := CpuExceptionCode.BAD_INSTRUCTION
-      exc.data := 0
+      exc.data := io.insnFetch.payload.insn.asUInt
     }
     is(M"1010-111") { // 0xa7/0xaf, dst ^= imm
       regWritebackData.index := rdIndex
@@ -219,7 +237,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     default {
       exc.valid := True
       exc.code := CpuExceptionCode.BAD_INSTRUCTION
-      exc.data := 0
+      exc.data := io.insnFetch.payload.insn.asUInt
     }
   }
 

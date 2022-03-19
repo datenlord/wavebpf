@@ -32,7 +32,9 @@ case class Regfetch(c: RegfetchConfig) extends Component {
   }
 
   val bank0 = Mem(Bits(64 bits), c.numRegs)
+  bank0.initialContent = Array.fill(c.numRegs)(0)
   val bank1 = Mem(Bits(64 bits), c.numRegs)
+  bank1.initialContent = Array.fill(c.numRegs)(0)
 
   val writeValid = io.writeReq.valid && io.writeReq.payload.index =/= 0
 

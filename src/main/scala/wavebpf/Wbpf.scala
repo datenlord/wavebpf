@@ -26,6 +26,7 @@ class Wbpf extends Component {
   val io = new Bundle {
     val dataMem = slave(dataMemory.use())
     val mmio = slave(Wishbone(MMIOBusConfig()))
+    val excOutput = out(CpuException())
   }
 
   val controller =
@@ -63,6 +64,7 @@ class Wbpf extends Component {
 
   exec.io.regWriteback >> regfile.io.writeReq
   exec.io.dataMem >> dataMemory.use()
+  io.excOutput := exec.io.excOutput
 }
 
 object WbpfVerilog {
