@@ -10,7 +10,6 @@ case class DataMemConfig(
 )
 
 case class DataMem(c: DataMemConfig) extends Area {
-  val data = Mem(Bits(64 bits), c.numWords)
   val users = ArrayBuffer[Wishbone]()
   val dmPort = Wishbone(DataMemWishboneConfig())
 

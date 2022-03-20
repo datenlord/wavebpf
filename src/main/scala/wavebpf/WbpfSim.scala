@@ -12,6 +12,12 @@ object WbpfSim {
     SimConfig.withWave.doSim(new Wbpf) { dut =>
       dut.clockDomain.fallingEdge()
       sleep(1)
+      dut.clockDomain.assertReset()
+      dut.clockDomain.risingEdge()
+      sleep(1)
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.fallingEdge()
+      sleep(1)
 
       /*
       void memAdd() {

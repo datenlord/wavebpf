@@ -77,11 +77,16 @@ case class ExecMemoryStage(c: ExecConfig) extends Component {
   excRegInit.code := CpuExceptionCode.NOT_INIT
   excRegInit.data := 0
 
-  val nextExc = CpuException()
-  val excReg = Reg(CpuException()) init(excRegInit)
+  val excReg = Reg(CpuException()) init (excRegInit)
   io.excOutput := excReg
 
-  when(!excReg.valid && io.aluStage.payload.exc.valid) {
+  val nextExc = CpuException()
+
+  when(
+    io.aluStage.valid && (
+      (!excReg.valid && io.aluStage.payload.exc.valid) || io.aluStage.payload.insnFetch.ctx.flush
+    )
+  ) {
     nextExc := io.aluStage.payload.exc
   } otherwise {
     nextExc := excReg
@@ -212,7 +217,9 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     }
     is(M"1100-111") { // 0xc7/0xcf, dst >>= imm (arithmetic)
       regWritebackData.index := rdIndex
-      regWritebackData.data := (rs1.asSInt >> operand2(5 downto 0))(63 downto 0).asBits
+      regWritebackData.data := (rs1.asSInt >> operand2(5 downto 0))(
+        63 downto 0
+      ).asBits
     }
     is(0x18) { // dst = imm
       regWritebackData.index := rdIndex
