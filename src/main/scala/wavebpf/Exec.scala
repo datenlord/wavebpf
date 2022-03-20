@@ -157,6 +157,53 @@ case class ExecMemoryStage(
     )
   )
 
+  fifo.io.push << io.aluStage.throwWhen(nextExc.valid)
+
+  val canOutput =
+    fifo.io.pop.valid && (!fifo.io.pop.payload.memory.valid || io.dataMem.ACK)
+  val popReady = io.output.ready && canOutput
+  fifo.io.pop.ready := popReady
+
+  when(fifo.io.pop.fire && fifo.io.pop.payload.memory.valid) {
+    report(
+      Seq(
+        "mem fire ",
+        fifo.io.pop.payload.memory.addr,
+        " store=",
+        fifo.io.pop.payload.memory.store
+      )
+    )
+  }
+
+  io.dataMem.CYC := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid && !io.dataMem.ACK
+  io.dataMem.STB := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid && !io.dataMem.ACK
+  io.dataMem.ADR := (fifo.io.pop.payload.memory.addr >> 3).resize(64)
+  io.dataMem.WE := fifo.io.pop.payload.memory.store
+  io.dataMem.DAT_MOSI := fifo.io.pop.payload.regFetch.rs2.data // TODO: imm
+
+  val writebackOverride = RegContext(c.regFetch, Bits(64 bits))
+  writebackOverride.index := fifo.io.pop.payload.memory.rd
+  writebackOverride.data := io.dataMem.DAT_MISO
+
+  outData.insnFetch := fifo.io.pop.payload.insnFetch
+  outData.regFetch := fifo.io.pop.payload.regFetch
+
+  val shouldWriteback =
+    fifo.io.pop.payload.memory.valid && !fifo.io.pop.payload.memory.store
+  outData.regWritebackValid := shouldWriteback
+    .mux(
+      (False, fifo.io.pop.payload.regWritebackValid),
+      (True, True)
+    )
+  outData.regWriteback := shouldWriteback
+    .mux(
+      (False, fifo.io.pop.payload.regWriteback),
+      (True, writebackOverride)
+    )
+  outData.exc := fifo.io.pop.payload.exc
+  io.output.valid := canOutput
+  io.output.payload := outData
+
   for (i <- 0 until fifoDepth) {
     val item = fifo.io.currentVec(i)
     val valid = Bool()
@@ -184,38 +231,6 @@ case class ExecMemoryStage(
       )
     }
   }
-
-  fifo.io.push << io.aluStage.throwWhen(nextExc.valid)
-  fifo.io.pop.ready := io.output.ready && (!fifo.io.pop.payload.memory.valid || io.dataMem.ACK)
-
-  io.dataMem.CYC := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid
-  io.dataMem.STB := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid
-  io.dataMem.ADR := (fifo.io.pop.payload.memory.addr >> 3).resize(64)
-  io.dataMem.WE := fifo.io.pop.payload.memory.store
-  io.dataMem.DAT_MOSI := fifo.io.pop.payload.regFetch.rs2.data // TODO: imm
-
-  val writebackOverride = RegContext(c.regFetch, Bits(64 bits))
-  writebackOverride.index := fifo.io.pop.payload.memory.rd
-  writebackOverride.data := io.dataMem.DAT_MISO
-
-  outData.insnFetch := fifo.io.pop.payload.insnFetch
-  outData.regFetch := fifo.io.pop.payload.regFetch
-
-  val shouldWriteback =
-    fifo.io.pop.payload.memory.valid && !fifo.io.pop.payload.memory.store
-  outData.regWritebackValid := shouldWriteback
-    .mux(
-      (False, fifo.io.pop.payload.regWritebackValid),
-      (True, True)
-    )
-  outData.regWriteback := shouldWriteback
-    .mux(
-      (False, fifo.io.pop.payload.regWriteback),
-      (True, writebackOverride)
-    )
-  outData.exc := fifo.io.pop.payload.exc
-  io.output.valid := fifo.io.pop.valid && fifo.io.pop.ready
-  io.output.payload := outData
 }
 
 case class ExecAluStage(c: ExecConfig) extends Component {
@@ -375,7 +390,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   io.output << outStream
 
   when(!outStream.valid) {
-    report("exec alu stall")
+    report(L"exec alu stall")
   }
 
   when(outStream.valid && memory.valid) {

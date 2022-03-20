@@ -26,7 +26,7 @@ class BypassNetwork[K <: Data, V <: Data](
       val (prio, subprio, valid, data) = x
 
       when(valid) {
-        report(
+        /*report(
           Seq(
             "bypass match prio ",
             U(prio, 32 bits),
@@ -37,7 +37,7 @@ class BypassNetwork[K <: Data, V <: Data](
             " value ",
             data
           )
-        )
+        )*/
         bypassed := data
       }
     })
