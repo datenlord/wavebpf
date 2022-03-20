@@ -28,6 +28,10 @@ case class DataMem(c: DataMemConfig) extends Area {
   )
   ack := dmPort.STB
 
+  when(dmPort.STB && dmPort.WE) {
+    report(Seq("DM WRITE ", addr, " ", dmPort.DAT_MOSI))
+  }
+
   def use(): Wishbone = {
     val port = Wishbone(DataMemWishboneConfig())
     users += port

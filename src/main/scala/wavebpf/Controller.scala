@@ -27,9 +27,11 @@ case class Controller(
     switch(addr) {
       is(0x00) {
         when(io.mmio.WE) {
-          refillCounter := io.mmio
+          val value = io.mmio
             .DAT_MOSI(insnBufferConfig.addrWidth - 1 downto 0)
             .asUInt
+          refillCounter := value
+          report(Seq("Set refill counter: ", value))
         } otherwise {
           io.mmio.DAT_MISO := refillCounter.asBits.resized
         }
@@ -46,6 +48,7 @@ case class Controller(
           io.refill.payload.addr := refillCounter
           io.refill.payload.insn := data
           refillCounter := refillCounter + 1
+          report(Seq("Commit refill: ", refillCounter, " ", data))
         }
       }
       is(0x03) {
@@ -53,6 +56,7 @@ case class Controller(
           io.pcUpdater.valid := True
           io.pcUpdater.payload.pc := io.mmio.DAT_MOSI.asUInt.resized
           io.pcUpdater.payload.flush := True
+          report(Seq("Update PC: ", io.mmio.DAT_MOSI.asUInt))
         }
       }
     }

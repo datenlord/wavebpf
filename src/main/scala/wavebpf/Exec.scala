@@ -19,15 +19,19 @@ case class AluStageInsnContext(
 ) extends Bundle {
   val regFetch = RegGroupContext(c.regFetch, Bits(64 bits))
   val insnFetch = InsnBufferReadRsp(c.insnFetch)
+  val regWritebackValid = Bool()
   val regWriteback = RegContext(c.regFetch, Bits(64 bits))
   val exc = CpuException()
-  val memory = new MemoryAccessReq()
+  val memory = new MemoryAccessReq(c)
 }
 
-case class MemoryAccessReq() extends Bundle {
+case class MemoryAccessReq(
+    c: ExecConfig
+) extends Bundle {
   val valid = Bool()
   val store = Bool()
   val addr = UInt(64 bits)
+  val rd = UInt(log2Up(c.regFetch.numRegs) bits)
   val width = MemoryAccessWidth()
 }
 
@@ -36,6 +40,7 @@ case class MemoryStageInsnContext(
 ) extends Bundle {
   val regFetch = RegGroupContext(c.regFetch, Bits(64 bits))
   val insnFetch = InsnBufferReadRsp(c.insnFetch)
+  val regWritebackValid = Bool()
   val regWriteback = RegContext(c.regFetch, Bits(64 bits))
   val exc = CpuException()
 }
@@ -49,24 +54,62 @@ case class Exec(c: ExecConfig) extends Component {
     val excOutput = out(CpuException())
   }
 
+  val rs1Bypass =
+    new BypassNetwork(UInt(log2Up(c.regFetch.numRegs) bits), Bits(64 bits))
+  val rs2Bypass =
+    new BypassNetwork(UInt(log2Up(c.regFetch.numRegs) bits), Bits(64 bits))
+  val rs1MemStallBypass =
+    new BypassNetwork(UInt(log2Up(c.regFetch.numRegs) bits), Bool)
+  val rs2MemStallBypass =
+    new BypassNetwork(UInt(log2Up(c.regFetch.numRegs) bits), Bool)
+
+  rs1Bypass.srcKey := io.regFetch.rs1.index
+  rs1Bypass.srcValue := io.regFetch.rs1.data
+  rs2Bypass.srcKey := io.regFetch.rs2.index
+  rs2Bypass.srcValue := io.regFetch.rs2.data
+  rs1MemStallBypass.srcKey := io.regFetch.rs1.index
+  rs1MemStallBypass.srcValue := False
+  rs2MemStallBypass.srcKey := io.regFetch.rs2.index
+  rs2MemStallBypass.srcValue := False
+
+  val rfOverride = RegGroupContext(c.regFetch, Bits(64 bits))
+  rfOverride.rs1.index := io.regFetch.rs1.index
+  rfOverride.rs1.data := rs1Bypass.bypassed
+  rfOverride.rs2.index := io.regFetch.rs2.index
+  rfOverride.rs2.data := rs2Bypass.bypassed
+
   val aluStage = new ExecAluStage(c)
-  io.regFetch >> aluStage.io.regFetch
+  io.regFetch
+    .translateWith(rfOverride)
+    .continueWhen(
+      !rs1MemStallBypass.bypassed && !rs2MemStallBypass.bypassed
+    ) >> aluStage.io.regFetch
   io.insnFetch >> aluStage.io.insnFetch
-  val memStage = new ExecMemoryStage(c)
+  val memStage =
+    new ExecMemoryStage(
+      c,
+      Seq(rs1Bypass, rs2Bypass),
+      Seq(rs1MemStallBypass, rs2MemStallBypass)
+    )
   memStage.io.aluStage << aluStage.io.output
   memStage.io.dataMem >> io.dataMem
   memStage.io.output
+    .throwWhen(!memStage.io.output.payload.regWritebackValid)
     .translateWith(memStage.io.output.payload.regWriteback)
     .toFlow >> io.regWriteback
   io.excOutput := memStage.io.excOutput
 }
 
-case class ExecMemoryStage(c: ExecConfig) extends Component {
+case class ExecMemoryStage(
+    c: ExecConfig,
+    bypass: Seq[BypassNetwork[UInt, Bits]],
+    stallBypass: Seq[BypassNetwork[UInt, Bool]]
+) extends Area {
   val io = new Bundle {
-    val aluStage = slave Stream (AluStageInsnContext(c))
-    val dataMem = master(Wishbone(DataMemWishboneConfig()))
-    val output = master Stream (MemoryStageInsnContext(c))
-    val excOutput = out(CpuException())
+    val aluStage = Stream(AluStageInsnContext(c))
+    val dataMem = Wishbone(DataMemWishboneConfig())
+    val output = Stream(MemoryStageInsnContext(c))
+    val excOutput = CpuException()
   }
 
   val outData = MemoryStageInsnContext(c)
@@ -94,24 +137,78 @@ case class ExecMemoryStage(c: ExecConfig) extends Component {
 
   excReg := nextExc
 
-  val fifo = StreamFifoLowLatency(AluStageInsnContext(c), 1)
+  val fifoDepth = 4
+  val fifo = new FlatStreamFifoLowLatency(
+    dataType = AluStageInsnContext(c),
+    depth = fifoDepth,
+    latency = 1,
+    useVec = true
+  )
+  report(
+    Seq(
+      "occupancy ",
+      fifo.io.occupancy,
+      " push ",
+      fifo.io.currentPushPtr,
+      " pop ",
+      fifo.io.currentPopPtr,
+      " push readiness ",
+      fifo.io.push.ready
+    )
+  )
+
+  for (i <- 0 until fifoDepth) {
+    val item = fifo.io.currentVec(i)
+    val valid = Bool()
+    when(fifo.io.occupancy === 0) {
+      valid := False
+    } elsewhen (fifo.io.currentPushPtr > fifo.io.currentPopPtr) {
+      valid := i < fifo.io.currentPushPtr && i >= fifo.io.currentPopPtr
+    } otherwise {
+      valid := i < fifo.io.currentPushPtr || i >= fifo.io.currentPopPtr
+    }
+    for (net <- bypass) {
+      net.provide(
+        2,
+        i,
+        valid && item.regWritebackValid && item.regWriteback.index === net.srcKey,
+        item.regWriteback.data
+      )
+    }
+    for (net <- stallBypass) {
+      net.provide(
+        2,
+        i,
+        valid && item.memory.rd === net.srcKey && item.memory.valid && !item.memory.store,
+        True
+      )
+    }
+  }
 
   fifo.io.push << io.aluStage.throwWhen(nextExc.valid)
   fifo.io.pop.ready := io.output.ready && (!fifo.io.pop.payload.memory.valid || io.dataMem.ACK)
 
   io.dataMem.CYC := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid
   io.dataMem.STB := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid
-  io.dataMem.ADR := fifo.io.pop.payload.memory.addr
+  io.dataMem.ADR := (fifo.io.pop.payload.memory.addr >> 3).resize(64)
   io.dataMem.WE := fifo.io.pop.payload.memory.store
   io.dataMem.DAT_MOSI := fifo.io.pop.payload.regFetch.rs2.data // TODO: imm
 
   val writebackOverride = RegContext(c.regFetch, Bits(64 bits))
-  writebackOverride.index := fifo.io.pop.payload.regWriteback.index
+  writebackOverride.index := fifo.io.pop.payload.memory.rd
   writebackOverride.data := io.dataMem.DAT_MISO
 
   outData.insnFetch := fifo.io.pop.payload.insnFetch
   outData.regFetch := fifo.io.pop.payload.regFetch
-  outData.regWriteback := (fifo.io.pop.payload.memory.valid && !fifo.io.pop.payload.memory.store)
+
+  val shouldWriteback =
+    fifo.io.pop.payload.memory.valid && !fifo.io.pop.payload.memory.store
+  outData.regWritebackValid := shouldWriteback
+    .mux(
+      (False, fifo.io.pop.payload.regWritebackValid),
+      (True, True)
+    )
+  outData.regWriteback := shouldWriteback
     .mux(
       (False, fifo.io.pop.payload.regWriteback),
       (True, writebackOverride)
@@ -147,13 +244,16 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   exc.data.assignDontCare()
   exc.valid := False
 
-  val memory = new MemoryAccessReq()
+  val memory = new MemoryAccessReq(c)
   memory.assignDontCare()
   memory.valid := False
+  memory.rd := rdIndex
 
   val regWritebackData = RegContext(c.regFetch, Bits(64 bits))
   regWritebackData.assignDontCare()
   regWritebackData.index := 0
+  val regWritebackValid = Bool()
+  regWritebackValid := False
 
   val isStore = opcode(1)
   memory.store := isStore
@@ -164,14 +264,17 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   switch(opcode) {
     is(M"0000-111") { // 0x07/0x0f, dst += imm
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 + operand2).asBits
     }
     is(M"0001-111") { // 0x17/0x1f, dst -= imm
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 - operand2).asBits
     }
     is(M"0010-111") { // 0x27/0x2f, dst *= imm
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 * operand2)(63 downto 0).asBits
     }
@@ -182,22 +285,27 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       exc.data := io.insnFetch.payload.insn.asUInt
     }
     is(M"0100-111") { // 0x47/0x4f, dst |= imm
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 | operand2).asBits
     }
     is(M"0101-111") { // 0x57/0x5f, dst &= imm
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 & operand2).asBits
     }
     is(M"0110-111") { // 0x67/0x6f, dst <<= imm
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 << operand2(5 downto 0))(63 downto 0).asBits
     }
     is(M"0111-111") { // 0x77/0x7f, dst >>= imm (logical)
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 >> operand2(5 downto 0))(63 downto 0).asBits
     }
     is(M"10000111") { // 0x87, dst = -dst
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (-rs1.asSInt).asBits
     }
@@ -208,20 +316,24 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       exc.data := io.insnFetch.payload.insn.asUInt
     }
     is(M"1010-111") { // 0xa7/0xaf, dst ^= imm
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 ^ operand2).asBits
     }
     is(M"1011-111") { // 0xb7/0xbf, dst = imm
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := operand2.asBits
     }
     is(M"1100-111") { // 0xc7/0xcf, dst >>= imm (arithmetic)
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1.asSInt >> operand2(5 downto 0))(
         63 downto 0
       ).asBits
     }
     is(0x18) { // dst = imm
+      regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := imm.asBits
     }
@@ -251,11 +363,31 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   val ctxOut = AluStageInsnContext(c)
   ctxOut.regFetch := io.regFetch
   ctxOut.insnFetch := io.insnFetch
+  ctxOut.regWritebackValid := regWritebackValid
   ctxOut.regWriteback := regWritebackData
   ctxOut.exc := exc
   ctxOut.memory := memory
 
-  io.output << StreamJoin
+  val outStream = StreamJoin
     .arg(io.regFetch, io.insnFetch)
     .translateWith(ctxOut)
+
+  io.output << outStream
+
+  when(!outStream.valid) {
+    report("exec alu stall")
+  }
+
+  when(outStream.valid && memory.valid) {
+    report(
+      Seq(
+        "Memory access at ",
+        memory.addr,
+        " with width ",
+        memory.width,
+        " and store ",
+        memory.store
+      )
+    )
+  }
 }

@@ -44,3 +44,4 @@ tmp/
 null
 
 .bloop/
+*.bin
