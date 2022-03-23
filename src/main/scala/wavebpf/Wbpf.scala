@@ -7,7 +7,8 @@ import spinal.lib.bus.wishbone._
 case class WbpfConfig(
     insnBuffer: InsnBufferConfig,
     regFetch: RegfetchConfig,
-    dataMemSize: Int
+    dataMemSize: Int,
+    splitAluMem: Boolean = false
 )
 
 class CustomWbpf(config: WbpfConfig) extends Component {
@@ -50,7 +51,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     c = ExecConfig(
       insnFetch = config.insnBuffer,
       regFetch = config.regFetch,
-      splitAluMem = false
+      splitAluMem = config.splitAluMem
     )
   )
   exec.io.regFetch << regfile.io.readRsp

@@ -159,6 +159,24 @@ case class ExecMemoryStage(
     bypass: Seq[BypassNetwork[UInt, Bits]],
     stallBypass: Seq[BypassNetwork[UInt, Bool]]
 ) extends Area {
+  private def provideBypassResource(stage: Stream[AluStageInsnContext]) {
+    for (net <- bypass) {
+      net.provide(
+        2,
+        0,
+        stage.valid && stage.regWritebackValid && stage.regWriteback.index === net.srcKey,
+        stage.regWriteback.data
+      )
+    }
+    for (net <- stallBypass) {
+      net.provide(
+        2,
+        0,
+        stage.valid && stage.memory.rd === net.srcKey && stage.memory.valid && !stage.memory.store,
+        True
+      )
+    }
+  }
   val io = new Bundle {
     val aluStage = Stream(AluStageInsnContext(c))
     val dataMem = DataMemV2Port()
@@ -203,17 +221,22 @@ case class ExecMemoryStage(
 
   excReg := nextExc
 
-  val maskedAluOutput = io.aluStage.throwWhen(nextExc.valid && !wasBranch)
+  var maskedAluOutput = io.aluStage.throwWhen(nextExc.valid && !wasBranch)
+  if (c.splitAluMem) {
+    maskedAluOutput = maskedAluOutput.stage()
+    provideBypassResource(maskedAluOutput)
+  }
+
   val (maskedAluOutputToMem, maskedAluOutputToStage) = StreamFork2(
     maskedAluOutput
   )
 
   val memReq = DataMemRequest()
-  memReq.addr := io.aluStage.payload.memory.addr
-  memReq.write := io.aluStage.payload.memory.store
+  memReq.addr := maskedAluOutput.memory.addr
+  memReq.write := maskedAluOutput.memory.store
   memReq.ctx.assignDontCare()
-  memReq.data := io.aluStage.payload.regFetch.rs2.data // TODO: imm
-  memReq.width := io.aluStage.payload.memory.width
+  memReq.data := maskedAluOutput.regFetch.rs2.data // TODO: imm
+  memReq.width := maskedAluOutput.memory.width
   maskedAluOutputToMem.translateWith(memReq) >> io.dataMem.request
 
   val maskedAluOutputStaged = maskedAluOutputToStage.stage()
@@ -243,22 +266,7 @@ case class ExecMemoryStage(
   io.output << StreamJoin(maskedAluOutputStaged, io.dataMem.response)
     .translateWith(outData)
 
-  for (net <- bypass) {
-    net.provide(
-      2,
-      0,
-      maskedAluOutputStaged.valid && maskedAluOutputStaged.regWritebackValid && maskedAluOutputStaged.regWriteback.index === net.srcKey,
-      maskedAluOutputStaged.regWriteback.data
-    )
-  }
-  for (net <- stallBypass) {
-    net.provide(
-      2,
-      0,
-      maskedAluOutputStaged.valid && maskedAluOutputStaged.memory.rd === net.srcKey && maskedAluOutputStaged.memory.valid && !maskedAluOutputStaged.memory.store,
-      True
-    )
-  }
+  provideBypassResource(maskedAluOutputStaged)
 }
 
 case class ExecAluStage(c: ExecConfig) extends Component {
