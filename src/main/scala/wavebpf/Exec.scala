@@ -6,6 +6,25 @@ import spinal.lib.bus.wishbone._
 
 object MemoryAccessWidth extends SpinalEnum(binarySequential) {
   val W1, W2, W4, W8 = newElement()
+
+  def alignedMask(self: SpinalEnumCraft[this.type]): Bits = {
+    val x = Bits(8 bits)
+    switch(self) {
+      is(W1) {
+        x := 0x1
+      }
+      is(W2) {
+        x := 0x3
+      }
+      is(W4) {
+        x := 0xf
+      }
+      is(W8) {
+        x := 0xff
+      }
+    }
+    x
+  }
 }
 
 case class ExecConfig(
@@ -56,7 +75,7 @@ case class Exec(c: ExecConfig) extends Component {
   val io = new Bundle {
     val regFetch = slave Stream (RegGroupContext(c.regFetch, Bits(64 bits)))
     val regWriteback = master Flow (RegContext(c.regFetch, Bits(64 bits)))
-    val dataMem = master(Wishbone(DataMemWishboneConfig()))
+    val dataMem = master(DataMemV2Port())
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
     val excOutput = out(CpuException())
     val branchPcUpdater = master Flow (PcUpdateReq())
@@ -103,7 +122,8 @@ case class Exec(c: ExecConfig) extends Component {
   val memOutputFlow = memStage.io.output.toFlow
 
   memStage.io.aluStage << aluStage.io.output
-  memStage.io.dataMem >> io.dataMem
+  memStage.io.dataMem.request >> io.dataMem.request
+  memStage.io.dataMem.response << io.dataMem.response
   memOutputFlow
     .throwWhen(!memStage.io.output.payload.regWritebackValid)
     .translateWith(memStage.io.output.payload.regWriteback) >> io.regWriteback
@@ -141,7 +161,7 @@ case class ExecMemoryStage(
 ) extends Area {
   val io = new Bundle {
     val aluStage = Stream(AluStageInsnContext(c))
-    val dataMem = Wishbone(DataMemWishboneConfig())
+    val dataMem = DataMemV2Port()
     val output = Stream(MemoryStageInsnContext(c))
     val excOutput = CpuException()
   }
@@ -177,100 +197,60 @@ case class ExecMemoryStage(
 
   excReg := nextExc
 
-  val fifoDepth = 4
-  val fifo = new FlatStreamFifoLowLatency(
-    dataType = AluStageInsnContext(c),
-    depth = fifoDepth,
-    latency = 1,
-    useVec = true
+  val maskedAluOutput = io.aluStage.throwWhen(nextExc.valid)
+  val (maskedAluOutputToMem, maskedAluOutputToStage) = StreamFork2(
+    maskedAluOutput
   )
-  /*report(
-    Seq(
-      "occupancy ",
-      fifo.io.occupancy,
-      " push ",
-      fifo.io.currentPushPtr,
-      " pop ",
-      fifo.io.currentPopPtr,
-      " push readiness ",
-      fifo.io.push.ready
-    )
-  )*/
 
-  fifo.io.push << io.aluStage.throwWhen(nextExc.valid)
+  val memReq = DataMemRequest()
+  memReq.addr := io.aluStage.payload.memory.addr
+  memReq.write := io.aluStage.payload.memory.store
+  memReq.ctx.assignDontCare()
+  memReq.data := io.aluStage.payload.regFetch.rs2.data // TODO: imm
+  memReq.width := io.aluStage.payload.memory.width
+  maskedAluOutputToMem.translateWith(memReq) >> io.dataMem.request
 
-  val canOutput =
-    fifo.io.pop.valid && (!fifo.io.pop.payload.memory.valid || io.dataMem.ACK)
-  val popReady = io.output.ready && canOutput
-  fifo.io.pop.ready := popReady
-
-  /*when(fifo.io.pop.fire && fifo.io.pop.payload.memory.valid) {
-    report(
-      Seq(
-        "mem fire ",
-        fifo.io.pop.payload.memory.addr,
-        " store=",
-        fifo.io.pop.payload.memory.store
-      )
-    )
-  }*/
-
-  io.dataMem.CYC := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid && !io.dataMem.ACK
-  io.dataMem.STB := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid && !io.dataMem.ACK
-  io.dataMem.ADR := (fifo.io.pop.payload.memory.addr >> 3).resize(64)
-  io.dataMem.WE := fifo.io.pop.payload.memory.store
-  io.dataMem.DAT_MOSI := fifo.io.pop.payload.regFetch.rs2.data // TODO: imm
+  val maskedAluOutputStaged = maskedAluOutputToStage.stage()
 
   val writebackOverride = RegContext(c.regFetch, Bits(64 bits))
-  writebackOverride.index := fifo.io.pop.payload.memory.rd
-  writebackOverride.data := io.dataMem.DAT_MISO
+  writebackOverride.index := maskedAluOutputStaged.memory.rd
+  writebackOverride.data := io.dataMem.response.payload.data
 
-  outData.insnFetch := fifo.io.pop.payload.insnFetch
-  outData.regFetch := fifo.io.pop.payload.regFetch
+  outData.insnFetch := maskedAluOutputStaged.insnFetch
+  outData.regFetch := maskedAluOutputStaged.regFetch
 
   val shouldWriteback =
-    fifo.io.pop.payload.memory.valid && !fifo.io.pop.payload.memory.store
+    maskedAluOutputStaged.memory.valid && !maskedAluOutputStaged.memory.store
   outData.regWritebackValid := shouldWriteback
     .mux(
-      (False, fifo.io.pop.payload.regWritebackValid),
+      (False, maskedAluOutputStaged.regWritebackValid),
       (True, True)
     )
   outData.regWriteback := shouldWriteback
     .mux(
-      (False, fifo.io.pop.payload.regWriteback),
+      (False, maskedAluOutputStaged.regWriteback),
       (True, writebackOverride)
     )
-  outData.exc := fifo.io.pop.payload.exc
-  outData.br := fifo.io.pop.payload.br
-  io.output.valid := canOutput
-  io.output.payload := outData
+  outData.exc := maskedAluOutputStaged.exc
+  outData.br := maskedAluOutputStaged.br
 
-  for (i <- 0 until fifoDepth) {
-    val item = fifo.io.currentVec(i)
-    val valid = Bool()
-    when(fifo.io.occupancy === 0) {
-      valid := False
-    } elsewhen (fifo.io.currentPushPtr > fifo.io.currentPopPtr) {
-      valid := i < fifo.io.currentPushPtr && i >= fifo.io.currentPopPtr
-    } otherwise {
-      valid := i < fifo.io.currentPushPtr || i >= fifo.io.currentPopPtr
-    }
-    for (net <- bypass) {
-      net.provide(
-        2,
-        i,
-        valid && item.regWritebackValid && item.regWriteback.index === net.srcKey,
-        item.regWriteback.data
-      )
-    }
-    for (net <- stallBypass) {
-      net.provide(
-        2,
-        i,
-        valid && item.memory.rd === net.srcKey && item.memory.valid && !item.memory.store,
-        True
-      )
-    }
+  io.output << StreamJoin(maskedAluOutputStaged, io.dataMem.response).translateWith(outData)
+
+  for (net <- bypass) {
+    net.provide(
+      2,
+      0,
+      maskedAluOutputStaged.valid && maskedAluOutputStaged.regWritebackValid && maskedAluOutputStaged.regWriteback.index === net.srcKey,
+      maskedAluOutputStaged.regWriteback.data
+    )
+  }
+  for (net <- stallBypass) {
+    net.provide(
+      2,
+      0,
+      maskedAluOutputStaged.valid && maskedAluOutputStaged.memory.rd === net.srcKey && maskedAluOutputStaged.memory.valid && !maskedAluOutputStaged.memory.store,
+      True
+    )
   }
 }
 

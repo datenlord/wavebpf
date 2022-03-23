@@ -11,7 +11,7 @@ case class WbpfConfig(
 )
 
 class CustomWbpf(config: WbpfConfig) extends Component {
-  val dataMemory = new DataMem(
+  val dataMemory = new DataMemV2(
     c = DataMemConfig(
       numWords = config.dataMemSize
     )
@@ -58,7 +58,10 @@ class CustomWbpf(config: WbpfConfig) extends Component {
                         else insnReadToExec.stage())
 
   exec.io.regWriteback >> regfile.io.writeReq
-  exec.io.dataMem >> dataMemory.use()
+
+  val dm = dataMemory.use()
+  exec.io.dataMem.request >> dm.request
+  exec.io.dataMem.response << dm.response
   exec.io.branchPcUpdater >> pcUpdater.getUpdater(2)
 
   io.excOutput := exec.io.excOutput

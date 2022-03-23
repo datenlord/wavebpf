@@ -6,12 +6,18 @@ import spinal.core.sim._
 
 object SimUtil {
   def dmReadOnce(dut: Wbpf, addr: BigInt): BigInt = {
-    dut.io.dataMem.CYC #= true
-    dut.io.dataMem.STB #= true
-    dut.io.dataMem.ADR #= addr
-    dut.io.dataMem.WE #= false
-    waitUntil(dut.io.dataMem.ACK.toBoolean)
-    dut.io.dataMem.DAT_MISO.toBigInt
+    dut.io.dataMem.request.valid #= true
+    dut.io.dataMem.request.write #= false
+    dut.io.dataMem.request.addr #= addr
+    dut.io.dataMem.request.width #= MemoryAccessWidth.W8
+    dut.io.dataMem.response.ready #= true
+
+    dut.clockDomain.waitSampling()
+
+    while (!dut.io.dataMem.response.valid.toBoolean) {
+      dut.clockDomain.waitSampling()
+    }
+    dut.io.dataMem.response.payload.data.toBigInt
   }
 
   def mmioWrite(dut: Wbpf, addr: Long, value: Long) {

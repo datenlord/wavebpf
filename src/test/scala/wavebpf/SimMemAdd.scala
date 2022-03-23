@@ -63,7 +63,7 @@ class SimMemAddSpec extends AnyFunSuite {
       }
 
       println("Running check.")
-      assert(dmReadOnce(dut, 0x20 / 8) == BigInt("8686868686868686", 16))
+      assert(dmReadOnce(dut, 0x20) == BigInt("8686868686868686", 16))
       println("Check passed.")
     }
   }
