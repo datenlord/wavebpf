@@ -14,6 +14,11 @@ object SimUtil {
 
     dut.clockDomain.waitSampling()
 
+    while (!dut.io.dataMem.request.ready.toBoolean) {
+      dut.clockDomain.waitSampling()
+    }
+    dut.io.dataMem.request.valid #= false
+
     while (!dut.io.dataMem.response.valid.toBoolean) {
       dut.clockDomain.waitSampling()
     }

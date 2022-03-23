@@ -42,7 +42,11 @@ object DataMemV2Port {
     val arbStream = new StreamArbiterFactory().roundRobin.on(annotatedReq)
     output.request << arbStream
     val rspVec = Vec(inputs.map(_.response))
-    val demux = StreamDemux(output.response, output.response.payload.ctx.resize(log2Up(inputs.length) bits), rspVec.length)
+    val demux = StreamDemux(
+      output.response,
+      output.response.payload.ctx.resize(log2Up(inputs.length) bits),
+      rspVec.length
+    )
     rspVec.zip(demux).foreach(x => x._1 << x._2)
   }
 }
@@ -98,3 +102,7 @@ case class DataMemV2(c: DataMemConfig) extends Area {
     DataMemV2Port.arbitrate(users, dmPort)
   }
 }
+
+case class DataMemConfig(
+    numWords: Int
+)
