@@ -6,19 +6,14 @@ import spinal.lib.bus.wishbone._
 
 case class WbpfConfig(
     insnBuffer: InsnBufferConfig,
-    regFetch: RegfetchConfig
+    regFetch: RegfetchConfig,
+    dataMemSize: Int
 )
 
-class Wbpf extends Component {
-  val config = WbpfConfig(
-    insnBuffer = InsnBufferConfig(
-      addrWidth = 8
-    ),
-    regFetch = RegfetchConfig()
-  )
+class CustomWbpf(config: WbpfConfig) extends Component {
   val dataMemory = new DataMem(
     c = DataMemConfig(
-      numWords = 1024
+      numWords = config.dataMemSize
     )
   )
   val pcmgr = new PcManager(c = config.insnBuffer)
@@ -32,7 +27,7 @@ class Wbpf extends Component {
   val controller =
     new Controller(insnBufferConfig = config.insnBuffer)
   controller.io.mmio << io.mmio
-  controller.io.pcUpdater >> pcUpdater.getUpdater
+  controller.io.pcUpdater >> pcUpdater.getUpdater(1)
 
   val insnBuffer = new InsnBuffer(c = config.insnBuffer)
   controller.io.refill >> insnBuffer.io.refill
@@ -64,8 +59,21 @@ class Wbpf extends Component {
 
   exec.io.regWriteback >> regfile.io.writeReq
   exec.io.dataMem >> dataMemory.use()
+  exec.io.branchPcUpdater >> pcUpdater.getUpdater(2)
+
   io.excOutput := exec.io.excOutput
 }
+
+class Wbpf
+    extends CustomWbpf(
+      WbpfConfig(
+        insnBuffer = InsnBufferConfig(
+          addrWidth = 10
+        ),
+        regFetch = RegfetchConfig(),
+        dataMemSize = 1024
+      )
+    ) {}
 
 object WbpfVerilog {
   def main(args: Array[String]): Unit = {

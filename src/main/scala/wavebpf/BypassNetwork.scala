@@ -19,10 +19,8 @@ class BypassNetwork[K <: Data, V <: Data](
   }
 
   Component.current.afterElaboration {
-    providers.sortBy({ x => (x._1, x._2) })
-
     bypassed := srcValue
-    providers.reverse.foreach((x) => {
+    providers.sortBy({ x => (x._1, x._2) }).reverse.foreach((x) => {
       val (prio, subprio, valid, data) = x
 
       when(valid) {

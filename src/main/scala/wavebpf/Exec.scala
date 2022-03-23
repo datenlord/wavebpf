@@ -23,6 +23,7 @@ case class AluStageInsnContext(
   val regWriteback = RegContext(c.regFetch, Bits(64 bits))
   val exc = CpuException()
   val memory = new MemoryAccessReq(c)
+  val br = BranchReq()
 }
 
 case class MemoryAccessReq(
@@ -43,6 +44,12 @@ case class MemoryStageInsnContext(
   val regWritebackValid = Bool()
   val regWriteback = RegContext(c.regFetch, Bits(64 bits))
   val exc = CpuException()
+  val br = BranchReq()
+}
+
+case class BranchReq() extends Bundle {
+  val valid = Bool()
+  val addr = UInt(61 bits)
 }
 
 case class Exec(c: ExecConfig) extends Component {
@@ -52,6 +59,7 @@ case class Exec(c: ExecConfig) extends Component {
     val dataMem = master(Wishbone(DataMemWishboneConfig()))
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
     val excOutput = out(CpuException())
+    val branchPcUpdater = master Flow (PcUpdateReq())
   }
 
   val rs1Bypass =
@@ -91,13 +99,39 @@ case class Exec(c: ExecConfig) extends Component {
       Seq(rs1Bypass, rs2Bypass),
       Seq(rs1MemStallBypass, rs2MemStallBypass)
     )
+
+  val memOutputFlow = memStage.io.output.toFlow
+
   memStage.io.aluStage << aluStage.io.output
   memStage.io.dataMem >> io.dataMem
-  memStage.io.output
+  memOutputFlow
     .throwWhen(!memStage.io.output.payload.regWritebackValid)
-    .translateWith(memStage.io.output.payload.regWriteback)
-    .toFlow >> io.regWriteback
+    .translateWith(memStage.io.output.payload.regWriteback) >> io.regWriteback
   io.excOutput := memStage.io.excOutput
+
+  val pcUpdateReq = PcUpdateReq()
+  pcUpdateReq.pc := memStage.io.output.payload.br.addr
+  pcUpdateReq.flush := True
+  pcUpdateReq.flushReason := PcFlushReasonCode.BRANCH_RESOLVE
+  memOutputFlow
+    .throwWhen(!memStage.io.output.payload.br.valid)
+    .translateWith(pcUpdateReq) >> io.branchPcUpdater
+
+  when(memStage.io.output.fire) {
+    report(
+      Seq(
+        "COMMIT",
+        " pc=",
+        memStage.io.output.payload.insnFetch.addr,
+        " regwb=",
+        memStage.io.output.payload.regWritebackValid,
+        " regwb.index=",
+        memStage.io.output.payload.regWriteback.index,
+        " regwb.data=",
+        memStage.io.output.payload.regWriteback.data
+      )
+    )
+  }
 }
 
 case class ExecMemoryStage(
@@ -127,7 +161,13 @@ case class ExecMemoryStage(
 
   when(
     io.aluStage.valid && (
-      (!excReg.valid && io.aluStage.payload.exc.valid) || io.aluStage.payload.insnFetch.ctx.flush
+      (!excReg.valid && io.aluStage.payload.exc.valid) || (excReg.valid && (
+        io.aluStage.payload.insnFetch.ctx.flush &&
+          ControlFlowPriority.forFlushReason(
+            io.aluStage.payload.insnFetch.ctx.flushReason
+          ) <=
+          ControlFlowPriority.forException(excReg.code)
+      ))
     )
   ) {
     nextExc := io.aluStage.payload.exc
@@ -144,7 +184,7 @@ case class ExecMemoryStage(
     latency = 1,
     useVec = true
   )
-  report(
+  /*report(
     Seq(
       "occupancy ",
       fifo.io.occupancy,
@@ -155,7 +195,7 @@ case class ExecMemoryStage(
       " push readiness ",
       fifo.io.push.ready
     )
-  )
+  )*/
 
   fifo.io.push << io.aluStage.throwWhen(nextExc.valid)
 
@@ -164,7 +204,7 @@ case class ExecMemoryStage(
   val popReady = io.output.ready && canOutput
   fifo.io.pop.ready := popReady
 
-  when(fifo.io.pop.fire && fifo.io.pop.payload.memory.valid) {
+  /*when(fifo.io.pop.fire && fifo.io.pop.payload.memory.valid) {
     report(
       Seq(
         "mem fire ",
@@ -173,7 +213,7 @@ case class ExecMemoryStage(
         fifo.io.pop.payload.memory.store
       )
     )
-  }
+  }*/
 
   io.dataMem.CYC := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid && !io.dataMem.ACK
   io.dataMem.STB := fifo.io.pop.valid && fifo.io.pop.payload.memory.valid && !io.dataMem.ACK
@@ -201,6 +241,7 @@ case class ExecMemoryStage(
       (True, writebackOverride)
     )
   outData.exc := fifo.io.pop.payload.exc
+  outData.br := fifo.io.pop.payload.br
   io.output.valid := canOutput
   io.output.payload := outData
 
@@ -276,6 +317,23 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     (False, rs2),
     (True, rs1)
   ) + offset
+
+  val br = BranchReq()
+  br.valid := False
+  br.addr := io.insnFetch.payload.addr.resize(61 bits) + 1 + offset.resize(
+    61 bits
+  )
+
+  val condEq = rs1 === operand2
+  val condNe = rs1 =/= operand2
+  val condLt = rs1 < operand2
+  val condLe = condLt || condEq
+  val condGt = !condLe
+  val condGe = !condLt
+  val condSlt = rs1.asSInt < operand2.asSInt
+  val condSle = condSlt || condEq
+  val condSgt = !condSle
+  val condSge = !condSlt
 
   switch(opcode) {
     is(M"0000-111") { // 0x07/0x0f, dst += imm
@@ -368,6 +426,58 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       memory.valid := True
       memory.width := MemoryAccessWidth.W8
     }
+
+    // Branch ops
+    is(0x05) {
+      // PC += off
+      br.valid := True
+    }
+    is(0x15, 0x1d) {
+      // jeq
+      br.valid := condEq
+    }
+    is(0x25, 0x2d) {
+      // jgt
+      br.valid := condGt
+    }
+    is(0x35, 0x3d) {
+      // jge
+      br.valid := condGe
+    }
+    is(0xa5, 0xad) {
+      // jlt
+      br.valid := condLt
+    }
+    is(0xb5, 0xbd) {
+      // jle
+      br.valid := condLe
+    }
+    is(0x55, 0x5d) {
+      // jne
+      br.valid := condNe
+    }
+    is(0x65, 0x6d) {
+      // jsgt
+      br.valid := condSgt
+    }
+    is(0x75, 0x7d) {
+      // jsge
+      br.valid := condSge
+    }
+    is(0xc5, 0xcd) {
+      // jslt
+      br.valid := condSlt
+    }
+    is(0xd5, 0xdd) {
+      // jsle
+      br.valid := condSle
+    }
+    is(0x95) {
+      // exit
+      exc.valid := True
+      exc.code := CpuExceptionCode.EXIT
+      exc.data := 0
+    }
     default {
       exc.valid := True
       exc.code := CpuExceptionCode.BAD_INSTRUCTION
@@ -382,6 +492,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   ctxOut.regWriteback := regWritebackData
   ctxOut.exc := exc
   ctxOut.memory := memory
+  ctxOut.br := br
 
   val outStream = StreamJoin
     .arg(io.regFetch, io.insnFetch)
@@ -389,11 +500,11 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   io.output << outStream
 
-  when(!outStream.valid) {
+  /*when(!outStream.valid) {
     report(L"exec alu stall")
-  }
+  }*/
 
-  when(outStream.valid && memory.valid) {
+  /*when(outStream.valid && memory.valid) {
     report(
       Seq(
         "Memory access at ",
@@ -404,5 +515,5 @@ case class ExecAluStage(c: ExecConfig) extends Component {
         memory.store
       )
     )
-  }
+  }*/
 }

@@ -14,7 +14,7 @@ jobs:
         java-version: 8
     - name: Install verilator
       run: sudo apt update && sudo apt install -y verilator
-    - name: Simulation
-      run: sbt "runMain wavebpf.WbpfSim"
+    - name: Test
+      run: sbt test
     - name: Generate verilog
       run: sbt "runMain wavebpf.WbpfVerilogSyncReset"

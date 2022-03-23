@@ -47,7 +47,7 @@ case class Regfetch(c: RegfetchConfig) extends Component {
     data = io.writeReq.payload.data
   )
 
-  when(io.writeReq.valid) {
+  /*when(io.writeReq.valid) {
     report(
       Seq(
         "Reg write ",
@@ -56,7 +56,7 @@ case class Regfetch(c: RegfetchConfig) extends Component {
         io.writeReq.payload.data
       )
     )
-  }
+  }*/
 
   val readReqStaged = if (c.isAsync) io.readReq else io.readReq.stage()
   val readData = if (c.isAsync) {

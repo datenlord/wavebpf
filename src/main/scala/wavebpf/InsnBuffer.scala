@@ -9,6 +9,7 @@ case class InsnBufferConfig(
 
 case class InsnBufferReadContext() extends Bundle {
   val flush = Bool()
+  val flushReason = PcFlushReasonCode()
 }
 
 case class InsnBufferRefillReq(c: InsnBufferConfig) extends Bundle {

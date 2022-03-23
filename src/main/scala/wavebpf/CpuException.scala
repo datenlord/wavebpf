@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 
 object CpuExceptionCode extends SpinalEnum(binarySequential) {
-  val INVALID, NOT_INIT, BAD_INSTRUCTION, BAD_MEMORY_ACCESS = newElement()
+  val INVALID, NOT_INIT, PENDING_BRANCH, BAD_INSTRUCTION, BAD_MEMORY_ACCESS, EXIT = newElement()
 }
 
 case class CpuException() extends Bundle {
