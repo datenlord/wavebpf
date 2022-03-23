@@ -13,7 +13,15 @@ jobs:
         distribution: temurin
         java-version: 8
     - name: Install verilator
-      run: sudo apt update && sudo apt install -y verilator
+      run: |
+        sudo apt-get install -y git perl python3 make autoconf g++ flex bison ccache libgoogle-perftools-dev numactl perl-doc libfl-dev libfl2 zlibc zlib1g zlib1g-dev
+        git clone https://github.com/verilator/verilator
+        cd verilator
+        git checkout stable
+        autoconf
+        ./configure
+        make -j `nproc`
+        sudo make install
     - name: Test
       run: sbt test
     - name: Generate verilog
