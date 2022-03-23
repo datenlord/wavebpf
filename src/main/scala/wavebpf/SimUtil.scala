@@ -25,6 +25,26 @@ object SimUtil {
     dut.io.dataMem.response.payload.data.toBigInt
   }
 
+  def dmWriteOnce(dut: Wbpf, addr: BigInt, word: BigInt, width: SpinalEnumElement[MemoryAccessWidth.type] = MemoryAccessWidth.W8) {
+    dut.io.dataMem.request.valid #= true
+    dut.io.dataMem.request.write #= true
+    dut.io.dataMem.request.addr #= addr
+    dut.io.dataMem.request.data #= word
+    dut.io.dataMem.request.width #= width
+    dut.io.dataMem.response.ready #= true
+
+    dut.clockDomain.waitSampling()
+
+    while (!dut.io.dataMem.request.ready.toBoolean) {
+      dut.clockDomain.waitSampling()
+    }
+    dut.io.dataMem.request.valid #= false
+
+    while (!dut.io.dataMem.response.valid.toBoolean) {
+      dut.clockDomain.waitSampling()
+    }
+  }
+
   def mmioWrite(dut: Wbpf, addr: Long, value: Long) {
     dut.io.mmio.CYC #= true
     dut.io.mmio.STB #= true

@@ -15,10 +15,21 @@ object WbpfSim {
     if (bytes.length % 8 != 0) {
       throw new Exception("Input file must be multiple of 8 bytes")
     }
-    println("Size: " + bytes.length)
+    println("Code size: " + bytes.length)
+
+    var dmImage = new Array[Byte](0)
+    if(args.length >= 2) {
+      dmImage = Files.readAllBytes(Paths.get(args(1)))
+      println("DM size: " + dmImage.length)
+    }
     SimConfig.withWave.doSim(new Wbpf) { dut =>
       dut.clockDomain.forkStimulus(10)
       loadCode(dut, 0x0, bytes)
+
+      for((b, i) <- dmImage.zipWithIndex) {
+        dmWriteOnce(dut, i, b, MemoryAccessWidth.W1)
+      }
+
       assert(dut.io.excOutput.valid.toBoolean)
       assert(dut.io.excOutput.code.toEnum == CpuExceptionCode.NOT_INIT)
       mmioWrite(dut, 0x03, 0x00)
@@ -38,9 +49,12 @@ object WbpfSim {
       var shouldStop = false
       var endExc: SpinalEnumElement[CpuExceptionCode.type] = null
       while (!shouldStop) {
-        waitUntil(dut.io.excOutput.valid.toBoolean)
-        endExc = dut.io.excOutput.code.toEnum
-        if (endExc != CpuExceptionCode.PENDING_BRANCH) {
+        dut.clockDomain.waitSampling()
+        if (dut.io.excOutput.valid.toBoolean && dut.io.excOutput.code.toEnum != CpuExceptionCode.PENDING_BRANCH) {
+          endExc = dut.io.excOutput.code.toEnum
+          shouldStop = true
+        }
+        if(cycles >= 10000) {
           shouldStop = true
         }
       }

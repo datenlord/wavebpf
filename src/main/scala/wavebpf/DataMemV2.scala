@@ -58,7 +58,7 @@ case class DataMemV2Core(c: DataMemConfig) extends Component {
   ): Bits = {
     val aligned = MemoryAccessWidth.alignedMask(w)
     val misalignment = addr(2 downto 0)
-    aligned >> misalignment
+    (aligned << misalignment).resize(aligned.getBitsWidth)
   }
   val io = new Bundle {
     val req = slave(Stream(DataMemRequest()))

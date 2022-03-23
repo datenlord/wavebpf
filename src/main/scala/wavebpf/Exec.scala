@@ -137,7 +137,7 @@ case class Exec(c: ExecConfig) extends Component {
     .throwWhen(!memStage.io.output.payload.br.valid)
     .translateWith(pcUpdateReq) >> io.branchPcUpdater
 
-  when(memStage.io.output.fire) {
+  when(memOutputFlow.fire) {
     report(
       Seq(
         "COMMIT",
@@ -178,6 +178,7 @@ case class ExecMemoryStage(
   io.excOutput := excReg
 
   val nextExc = CpuException()
+  val wasBranch = Bool(false)
 
   when(
     io.aluStage.valid && (
@@ -191,13 +192,18 @@ case class ExecMemoryStage(
     )
   ) {
     nextExc := io.aluStage.payload.exc
+  } elsewhen (io.aluStage.valid && !excReg.valid && io.aluStage.payload.br.valid) {
+    nextExc.valid := True
+    nextExc.code := CpuExceptionCode.PENDING_BRANCH
+    nextExc.data := 0
+    wasBranch.set()
   } otherwise {
     nextExc := excReg
   }
 
   excReg := nextExc
 
-  val maskedAluOutput = io.aluStage.throwWhen(nextExc.valid)
+  val maskedAluOutput = io.aluStage.throwWhen(nextExc.valid && !wasBranch)
   val (maskedAluOutputToMem, maskedAluOutputToStage) = StreamFork2(
     maskedAluOutput
   )
@@ -234,7 +240,8 @@ case class ExecMemoryStage(
   outData.exc := maskedAluOutputStaged.exc
   outData.br := maskedAluOutputStaged.br
 
-  io.output << StreamJoin(maskedAluOutputStaged, io.dataMem.response).translateWith(outData)
+  io.output << StreamJoin(maskedAluOutputStaged, io.dataMem.response)
+    .translateWith(outData)
 
   for (net <- bypass) {
     net.provide(
