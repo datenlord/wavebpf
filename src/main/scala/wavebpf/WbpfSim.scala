@@ -30,16 +30,18 @@ object WbpfSim {
         dmWriteOnce(dut, i, b, MemoryAccessWidth.W1)
       }
 
-      assert(dut.io.excOutput.valid.toBoolean)
-      assert(dut.io.excOutput.code.toEnum == CpuExceptionCode.NOT_INIT)
-      mmioWrite(dut, 0x03, 0x00)
+      val firstExc = dut.io.excOutput.head
+
+      assert(firstExc.valid.toBoolean)
+      assert(firstExc.code.toEnum == CpuExceptionCode.NOT_INIT)
+      mmioWrite(dut, 0x1018, 0x00)
 
       waitUntil(
-        !dut.io.excOutput.valid.toBoolean || dut.io.excOutput.code.toEnum != CpuExceptionCode.NOT_INIT
+        !firstExc.valid.toBoolean || firstExc.code.toEnum != CpuExceptionCode.NOT_INIT
       )
-      if (dut.io.excOutput.valid.toBoolean) {
+      if (firstExc.valid.toBoolean) {
         throw new Exception(
-          "Init exception: " + dut.io.excOutput.code.toEnum + " " + dut.io.excOutput.data.toBigInt
+          "Init exception: " + firstExc.code.toEnum + " " + firstExc.data.toBigInt
         )
       }
 
@@ -54,9 +56,9 @@ object WbpfSim {
       while (!shouldStop) {
         dut.clockDomain.waitSampling()
         if (
-          dut.io.excOutput.valid.toBoolean && dut.io.excOutput.code.toEnum != CpuExceptionCode.PENDING_BRANCH
+          firstExc.valid.toBoolean && firstExc.code.toEnum != CpuExceptionCode.PENDING_BRANCH
         ) {
-          endExc = dut.io.excOutput.code.toEnum
+          endExc = firstExc.code.toEnum
           shouldStop = true
         }
         if (cycles >= 10000) {

@@ -64,27 +64,29 @@ object SimUtil {
   }
 
   def mmioWrite(dut: Wbpf, addr: Long, value: Long) {
+    //println("Write MMIO " + addr + " " + value)
     dut.io.mmio.aw.valid #= true
-    dut.io.mmio.aw.payload.addr #= addr * 8
-    waitUntil(dut.io.mmio.aw.ready.toBoolean)
+    dut.io.mmio.aw.payload.addr #= addr
     dut.clockDomain.waitSampling()
+    waitUntil(dut.io.mmio.aw.ready.toBoolean)
     dut.io.mmio.aw.valid #= false
 
     dut.io.mmio.w.valid #= true
     dut.io.mmio.w.payload.data #= value
     dut.io.mmio.w.payload.last #= true
-    waitUntil(dut.io.mmio.w.ready.toBoolean)
     dut.clockDomain.waitSampling()
+    waitUntil(dut.io.mmio.w.ready.toBoolean)
     dut.io.mmio.w.valid #= false
 
     waitUntil(dut.io.mmio.b.valid.toBoolean)
+    dut.clockDomain.waitSampling()
     dut.io.mmio.b.ready #= true
     dut.clockDomain.waitSampling()
     dut.io.mmio.b.ready #= false
   }
 
   def loadCode(dut: Wbpf, baseAddr: Long, code: Array[Byte]) {
-    mmioWrite(dut, 0x00, baseAddr)
+    mmioWrite(dut, 0x1000, baseAddr)
 
     var upperHalf = false
     var buffer: Int = 0
@@ -97,7 +99,7 @@ object SimUtil {
       if (pos == 4) {
         mmioWrite(
           dut,
-          if (upperHalf) 0x02 else 0x01,
+          if (upperHalf) 0x1010 else 0x1008,
           buffer.toLong & 0x00000000ffffffffL
         )
         upperHalf = !upperHalf

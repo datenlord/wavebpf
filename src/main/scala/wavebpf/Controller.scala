@@ -20,40 +20,47 @@ case class Controller(
   io.pcUpdater.valid := False
 
   io.refill.setIdle()
-  io.mmio.setBlocked()
+
+  val mmio = Axi4(MMIOBusConfigV2())
+  mmio.ar << io.mmio.ar.s2mPipe()
+  mmio.aw << io.mmio.aw.s2mPipe()
+  mmio.w << io.mmio.w.s2mPipe()
+  mmio.r >> io.mmio.r
+  mmio.b >> io.mmio.b
+  mmio.setBlocked()
 
   val awSnapshot = Reg(Axi4Aw(MMIOBusConfigV2()))
   val writeAddr = awSnapshot.addr(7 downto 3)
 
+  mmio.b.payload.id := awSnapshot.id
+
   val writeFsm = new StateMachine {
     val waitForAw: State = new State with EntryPoint {
       whenIsActive {
-        when(io.mmio.aw.valid) {
-          awSnapshot := io.mmio.aw.payload
+        when(mmio.aw.valid) {
+          mmio.aw.ready := True
+          awSnapshot := mmio.aw.payload
           goto(waitForW)
         }
-      }
-      onExit {
-        io.mmio.aw.ready := True
       }
     }
     val waitForW: State = new State {
       whenIsActive {
-        when(io.mmio.w.valid) {
-          io.mmio.w.ready := True
-          when(io.mmio.w.last) {
+        when(mmio.w.valid) {
+          mmio.w.ready := True
+          when(mmio.w.last) {
             switch(writeAddr) {
               is(0x00) {
-                val value = io.mmio.w.payload
+                val value = mmio.w.payload
                   .data(insnBufferConfig.addrWidth - 1 downto 0)
                   .asUInt
                 refillCounter := value
               }
               is(0x01) {
-                refillBuffer := io.mmio.w.payload.data
+                refillBuffer := mmio.w.payload.data
               }
               is(0x02) {
-                val data = io.mmio.w.payload.data ## refillBuffer
+                val data = mmio.w.payload.data ## refillBuffer
                 io.refill.valid := True
                 io.refill.payload.addr := refillCounter
                 io.refill.payload.insn := data
@@ -61,10 +68,10 @@ case class Controller(
               }
               is(0x03) {
                 io.pcUpdater.valid := True
-                io.pcUpdater.payload.pc := io.mmio.w.payload.data.asUInt.resized
+                io.pcUpdater.payload.pc := mmio.w.payload.data.asUInt.resized
                 io.pcUpdater.payload.flush := True
                 io.pcUpdater.payload.flushReason := PcFlushReasonCode.EXTERNAL
-                report(Seq("Update PC: ", io.mmio.w.payload.data.asUInt))
+                report(Seq("Update PC: ", mmio.w.payload.data.asUInt))
               }
             }
             goto(sendWriteRsp)
@@ -74,9 +81,8 @@ case class Controller(
     }
     val sendWriteRsp: State = new State {
       whenIsActive {
-        io.mmio.b.valid := True
-        io.mmio.b.payload.id := awSnapshot.id
-        when(io.mmio.b.ready) {
+        mmio.b.valid := True
+        when(mmio.b.ready) {
           goto(waitForAw)
         }
       }

@@ -3,12 +3,12 @@ package wavebpf
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.amba4.axi._
+import spinal.lib.bus.misc.SizeMapping
 
 case class WbpfConfig(
-    insnBuffer: InsnBufferConfig,
-    regFetch: RegfetchConfig,
+    pe: PeConfig,
     dataMemSize: Int,
-    splitAluMem: Boolean = false
+    numPe: Int
 )
 
 class CustomWbpf(config: WbpfConfig) extends Component {
@@ -17,65 +17,46 @@ class CustomWbpf(config: WbpfConfig) extends Component {
       numWords = config.dataMemSize
     )
   )
-  val pcmgr = new PcManager(c = config.insnBuffer)
-  var pcUpdater = new PcUpdater(pcmgr)
   val io = new Bundle {
-    val dataMem = slave(dataMemory.use())
     val mmio = slave(Axi4(MMIOBusConfigV2()))
-    val excOutput = out(CpuException())
+    val excOutput = out(
+      Vec(for (i <- 0 until config.numPe) yield CpuException())
+    )
+    val dataMem = slave(dataMemory.use())
   }
-
-  val controller =
-    new Controller(insnBufferConfig = config.insnBuffer)
-  controller.io.mmio << io.mmio
-  controller.io.pcUpdater >> pcUpdater.getUpdater(1)
-
-  val insnBuffer = new InsnBuffer(c = config.insnBuffer)
-  controller.io.refill >> insnBuffer.io.refill
-  pcmgr.io.stream >> insnBuffer.io.readReq
-
-  val regfile = new Regfetch(c = config.regFetch)
-
-  val regfileReadInput =
-    RegGroupContext(c = config.regFetch, dataType = new Bundle)
-  val (insnReadToRegfile, insnReadToExec) = StreamFork2(insnBuffer.io.readRsp)
-  regfileReadInput.rs1.index := insnReadToRegfile.payload
-    .insn(11 downto 8)
-    .asUInt // dst
-  regfileReadInput.rs2.index := insnReadToRegfile.payload
-    .insn(15 downto 12)
-    .asUInt // src
-  regfile.io.readReq << insnReadToRegfile.translateWith(regfileReadInput)
-
-  val exec = new Exec(
-    c = ExecConfig(
-      insnFetch = config.insnBuffer,
-      regFetch = config.regFetch,
-      splitAluMem = config.splitAluMem
+  val peList = (0 until config.numPe).map(i => {
+    val pe = new ProcessingElement(config.pe)
+    val dm = dataMemory.use()
+    pe.io.dm.request >> dm.request
+    pe.io.dm.response << dm.response
+    pe
+  })
+  val mmioDecoder = Axi4WriteOnlyDecoder(
+    MMIOBusConfigV2(),
+    peList.zipWithIndex.map(x =>
+      SizeMapping(base = 0x1000 + x._2 * 0x1000, size = 0x1000)
     )
   )
-  exec.io.regFetch << regfile.io.readRsp
-  exec.io.insnFetch << (if (config.regFetch.isAsync) insnReadToExec
-                        else insnReadToExec.stage())
-
-  exec.io.regWriteback >> regfile.io.writeReq
-
-  val dm = dataMemory.use()
-  exec.io.dataMem.request >> dm.request
-  exec.io.dataMem.response << dm.response
-  exec.io.branchPcUpdater >> pcUpdater.getUpdater(2)
-
-  io.excOutput := exec.io.excOutput
+  io.mmio.ar.setBlocked()
+  io.mmio.r.setIdle()
+  mmioDecoder.io.input << io.mmio
+  mmioDecoder.io.outputs
+    .zip(peList)
+    .foreach(x => x._2.io.mmio << x._1.toAxi4())
+  io.excOutput.zip(peList).foreach(x => x._1 := x._2.io.excOutput)
 }
 
 class Wbpf
     extends CustomWbpf(
       WbpfConfig(
-        insnBuffer = InsnBufferConfig(
-          addrWidth = 10
+        pe = PeConfig(
+          insnBuffer = InsnBufferConfig(
+            addrWidth = 10
+          ),
+          regFetch = RegfetchConfig()
         ),
-        regFetch = RegfetchConfig(),
-        dataMemSize = 1024
+        dataMemSize = 1024,
+        numPe = 2
       )
     ) {}
 

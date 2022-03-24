@@ -13,6 +13,8 @@ class SimMemAddSpec extends AnyFunSuite {
     SimConfig.withWave.doSim(new Wbpf) { dut =>
       initDutForTesting(dut)
 
+      val firstExc = dut.io.excOutput.head
+
       /*
       void memAdd() {
         long a = *(long *)0x10;
@@ -40,20 +42,16 @@ class SimMemAddSpec extends AnyFunSuite {
       )
       println("Code loaded.")
 
-      assert(dut.io.excOutput.valid.toBoolean)
-      assert(dut.io.excOutput.code.toEnum == CpuExceptionCode.NOT_INIT)
+      assert(firstExc.valid.toBoolean)
+      assert(firstExc.code.toEnum == CpuExceptionCode.NOT_INIT)
 
-      mmioWrite(dut, 0x03, 0x00)
-      assert(dut.io.excOutput.code.toEnum == CpuExceptionCode.NOT_INIT)
-      dut.clockDomain.waitSampling()
-      assert(dut.io.excOutput.code.toEnum == CpuExceptionCode.NOT_INIT)
-      dut.clockDomain.waitSampling()
-      assert(dut.io.excOutput.valid.toBoolean == false)
-      while (!dut.io.excOutput.valid.toBoolean) {
+      mmioWrite(dut, 0x1018, 0x00)
+      waitUntil(!firstExc.valid.toBoolean)
+      while (!firstExc.valid.toBoolean) {
         println("*** CLOCK CYCLE ***")
         dut.clockDomain.waitSampling()
       }
-      assert(dut.io.excOutput.code.toEnum == CpuExceptionCode.EXIT)
+      assert(firstExc.code.toEnum == CpuExceptionCode.EXIT)
 
       println("Code execution completed.")
       for (i <- 0 to 2) {
