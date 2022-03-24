@@ -20,7 +20,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
   val io = new Bundle {
     val mmio = slave(Axi4(MMIOBusConfigV2()))
     val excOutput = out(
-      Vec(for (i <- 0 until config.numPe) yield CpuException())
+      Vec(for (i <- 0 until config.numPe) yield new CpuException())
     )
     val dataMem = slave(dataMemory.use())
   }

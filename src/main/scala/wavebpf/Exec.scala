@@ -40,7 +40,7 @@ case class AluStageInsnContext(
   val insnFetch = InsnBufferReadRsp(c.insnFetch)
   val regWritebackValid = Bool()
   val regWriteback = RegContext(c.regFetch, Bits(64 bits))
-  val exc = CpuException()
+  val exc = new CpuExceptionSkeleton()
   val memory = new MemoryAccessReq(c)
   val br = BranchReq()
 }
@@ -62,7 +62,6 @@ case class MemoryStageInsnContext(
   val insnFetch = InsnBufferReadRsp(c.insnFetch)
   val regWritebackValid = Bool()
   val regWriteback = RegContext(c.regFetch, Bits(64 bits))
-  val exc = CpuException()
   val br = BranchReq()
 }
 
@@ -77,7 +76,7 @@ case class Exec(c: ExecConfig) extends Component {
     val regWriteback = master Flow (RegContext(c.regFetch, Bits(64 bits)))
     val dataMem = master(DataMemV2Port())
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
-    val excOutput = out(CpuException())
+    val excOutput = out(new CpuException())
     val branchPcUpdater = master Flow (PcUpdateReq())
   }
 
@@ -159,7 +158,10 @@ case class ExecMemoryStage(
     bypass: Seq[BypassNetwork[UInt, Bits]],
     stallBypass: Seq[BypassNetwork[UInt, Bool]]
 ) extends Area {
-  private def provideBypassResource(stage: Flow[AluStageInsnContext], subprio: Int) {
+  private def provideBypassResource(
+      stage: Flow[AluStageInsnContext],
+      subprio: Int
+  ) {
     for (net <- bypass) {
       net.provide(
         2,
@@ -181,21 +183,22 @@ case class ExecMemoryStage(
     val aluStage = Stream(AluStageInsnContext(c))
     val dataMem = DataMemV2Port()
     val output = Stream(MemoryStageInsnContext(c))
-    val excOutput = CpuException()
+    val excOutput = new CpuException()
   }
 
   val outData = MemoryStageInsnContext(c)
   val memRead = Bits(64 bits)
 
-  val excRegInit = CpuException()
+  val excRegInit = new CpuException()
   excRegInit.valid := True
   excRegInit.code := CpuExceptionCode.NOT_INIT
   excRegInit.data := 0
+  excRegInit.pc := 0
 
-  val excReg = Reg(CpuException()) init (excRegInit)
+  val excReg = Reg(new CpuException()) init (excRegInit)
   io.excOutput := excReg
 
-  val nextExc = CpuException()
+  val nextExc = new CpuException()
   val wasBranch = Bool(false)
 
   when(
@@ -209,11 +212,15 @@ case class ExecMemoryStage(
       ))
     )
   ) {
-    nextExc := io.aluStage.payload.exc
+    nextExc.valid := io.aluStage.payload.exc.valid
+    nextExc.code := io.aluStage.payload.exc.code
+    nextExc.data := io.aluStage.payload.exc.data
+    nextExc.pc := io.aluStage.payload.insnFetch.addr.resized
   } elsewhen (io.aluStage.valid && !excReg.valid && io.aluStage.payload.br.valid) {
     nextExc.valid := True
     nextExc.code := CpuExceptionCode.PENDING_BRANCH
     nextExc.data := 0
+    nextExc.pc := io.aluStage.payload.insnFetch.addr.resized
     wasBranch.set()
   } otherwise {
     nextExc := excReg
@@ -260,7 +267,6 @@ case class ExecMemoryStage(
       (False, maskedAluOutputStaged.regWriteback),
       (True, writebackOverride)
     )
-  outData.exc := maskedAluOutputStaged.exc
   outData.br := maskedAluOutputStaged.br
 
   val output = StreamJoin(maskedAluOutputStaged, io.dataMem.response)
@@ -277,7 +283,10 @@ case class ExecMemoryStage(
     bypassCtx.memory.valid := False
   }
 
-  provideBypassResource(maskedAluOutputStaged.asFlow.translateWith(bypassCtx), 1)
+  provideBypassResource(
+    maskedAluOutputStaged.asFlow.translateWith(bypassCtx),
+    1
+  )
 }
 
 case class ExecAluStage(c: ExecConfig) extends Component {
@@ -301,7 +310,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     operand2 := imm
   }
 
-  val exc = CpuException()
+  val exc = new CpuExceptionSkeleton()
   exc.code.assignDontCare()
   exc.data.assignDontCare()
   exc.valid := False

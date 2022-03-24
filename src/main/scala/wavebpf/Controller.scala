@@ -12,6 +12,7 @@ case class Controller(
     val mmio = slave(Axi4(MMIOBusConfigV2()))
     val refill = master Flow (InsnBufferRefillReq(insnBufferConfig))
     val pcUpdater = master Flow (PcUpdateReq())
+    val excReport = in(new CpuException())
   }
 
   val refillCounter = Reg(UInt(insnBufferConfig.addrWidth bits)) init (0)
@@ -91,6 +92,7 @@ case class Controller(
 
   val arSnapshot = Reg(Axi4Ar(MMIOBusConfigV2()))
   val readAddr = arSnapshot.addr(11 downto 3)
+  val readHigherHalf = arSnapshot.addr(2)
 
   val readFsm = new StateMachine {
     val waitForAr: State = new State with EntryPoint {
@@ -111,6 +113,33 @@ case class Controller(
         switch(readAddr) {
           is(0x00) {
             mmio.r.payload.data := refillCounter.asBits.resized
+          }
+          is(0x03) {
+            val pc = io.excReport.pc.asBits << 3
+            val data = readHigherHalf.mux(
+              (False, pc(31 downto 0)),
+              (True, pc(63 downto 32))
+            )
+            mmio.r.payload.data := io.excReport.valid.mux(
+              (False, U(0, 32 bits).asBits),
+              (True, data)
+            )
+          }
+          is(0x04) {
+            mmio.r.payload.data := io.excReport.valid.mux(
+              (False, U(0, 32 bits).asBits),
+              (True, io.excReport.code.asBits.resize(32 bits))
+            )
+          }
+          is(0x05) {
+            val data = readHigherHalf.mux(
+              (False, io.excReport.data(31 downto 0)),
+              (True, io.excReport.data(63 downto 32))
+            )
+            mmio.r.payload.data := io.excReport.valid.mux(
+              (False, U(0, 32 bits).asBits),
+              (True, data.asBits)
+            )
           }
           default {
             mmio.r.payload.data := 0

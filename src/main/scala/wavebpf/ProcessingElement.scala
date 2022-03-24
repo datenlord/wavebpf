@@ -10,13 +10,12 @@ case class PeConfig(
     splitAluMem: Boolean = false
 )
 
-case class ProcessingElement(config: PeConfig)
-    extends Component {
+case class ProcessingElement(config: PeConfig) extends Component {
   val pcmgr = new PcManager(c = config.insnBuffer)
   var pcUpdater = new PcUpdater(pcmgr)
   val io = new Bundle {
     val mmio = slave(Axi4(MMIOBusConfigV2()))
-    val excOutput = out(CpuException())
+    val excOutput = out(new CpuException())
     val dm = master(DataMemV2Port())
   }
 
@@ -59,10 +58,15 @@ case class ProcessingElement(config: PeConfig)
   exec.io.dataMem.response << io.dm.response
   exec.io.branchPcUpdater >> pcUpdater.getUpdater(2)
 
+  val excReport = new CpuException()
+
   when(exec.io.excOutput.code === CpuExceptionCode.PENDING_BRANCH) {
-    io.excOutput.assignDontCare()
-    io.excOutput.valid := False
+    excReport.assignDontCare()
+    excReport.valid := False
   } otherwise {
-    io.excOutput := exec.io.excOutput
+    excReport := exec.io.excOutput
   }
+
+  io.excOutput := excReport
+  controller.io.excReport := excReport
 }
