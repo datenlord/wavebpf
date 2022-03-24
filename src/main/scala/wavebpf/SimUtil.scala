@@ -64,7 +64,7 @@ object SimUtil {
   }
 
   def mmioWrite(dut: Wbpf, addr: Long, value: Long) {
-    //println("Write MMIO " + addr + " " + value)
+    // println("Write MMIO " + addr + " " + value)
     dut.io.mmio.aw.valid #= true
     dut.io.mmio.aw.payload.addr #= addr
     dut.clockDomain.waitSampling()
@@ -83,6 +83,25 @@ object SimUtil {
     dut.io.mmio.b.ready #= true
     dut.clockDomain.waitSampling()
     dut.io.mmio.b.ready #= false
+  }
+
+  def mmioRead(dut: Wbpf, addr: Long): BigInt = {
+    // println("Read MMIO " + addr)
+    dut.io.mmio.ar.valid #= true
+    dut.io.mmio.ar.payload.addr #= addr
+    dut.clockDomain.waitSampling()
+    waitUntil(dut.io.mmio.ar.ready.toBoolean)
+    dut.io.mmio.ar.valid #= false
+
+    waitUntil(dut.io.mmio.r.valid.toBoolean)
+    dut.clockDomain.waitSampling()
+    assert(dut.io.mmio.r.last.toBoolean)
+    val ret = dut.io.mmio.r.payload.data.toBigInt
+    dut.io.mmio.r.ready #= true
+    dut.clockDomain.waitSampling()
+    dut.io.mmio.r.ready #= false
+
+    ret
   }
 
   def loadCode(dut: Wbpf, baseAddr: Long, code: Array[Byte]) {

@@ -51,6 +51,9 @@ class SimSumLoopSpec extends AnyFunSuite {
       }
       assert(firstExc.code.toEnum == CpuExceptionCode.EXIT)
 
+      assert(mmioRead(dut, 0x1018) == 0x80) // pc
+      assert(mmioRead(dut, 0x1020) == 5) // code
+
       println("Code execution completed.")
       for (i <- 0 to 2) {
         println("*** CLOCK CYCLE ***")
