@@ -10,6 +10,7 @@ object SimUtil {
     dut.io.dataMem.request.write #= false
     dut.io.dataMem.request.addr #= addr
     dut.io.dataMem.request.width #= MemoryAccessWidth.W8
+    dut.io.dataMem.request.precomputedStrbValid #= false
     dut.io.dataMem.response.ready #= true
 
     dut.clockDomain.waitSampling()
@@ -36,6 +37,7 @@ object SimUtil {
     dut.io.dataMem.request.addr #= addr
     dut.io.dataMem.request.data #= word
     dut.io.dataMem.request.width #= width
+    dut.io.dataMem.request.precomputedStrbValid #= false
     dut.io.dataMem.response.ready #= true
 
     dut.clockDomain.waitSampling()

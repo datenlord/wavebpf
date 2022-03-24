@@ -244,6 +244,8 @@ case class ExecMemoryStage(
   memReq.ctx.assignDontCare()
   memReq.data := maskedAluOutput.regFetch.rs2.data // TODO: imm
   memReq.width := maskedAluOutput.memory.width
+  memReq.precomputedStrbValid := False
+  memReq.precomputedStrb.assignDontCare()
   maskedAluOutputToMem.translateWith(memReq) >> io.dataMem.request
 
   val maskedAluOutputStaged = maskedAluOutputToStage.stage()
