@@ -159,11 +159,11 @@ case class ExecMemoryStage(
     bypass: Seq[BypassNetwork[UInt, Bits]],
     stallBypass: Seq[BypassNetwork[UInt, Bool]]
 ) extends Area {
-  private def provideBypassResource(stage: Stream[AluStageInsnContext]) {
+  private def provideBypassResource(stage: Flow[AluStageInsnContext], subprio: Int) {
     for (net <- bypass) {
       net.provide(
         2,
-        0,
+        subprio,
         stage.valid && stage.regWritebackValid && stage.regWriteback.index === net.srcKey,
         stage.regWriteback.data
       )
@@ -171,7 +171,7 @@ case class ExecMemoryStage(
     for (net <- stallBypass) {
       net.provide(
         2,
-        0,
+        subprio,
         stage.valid && stage.memory.rd === net.srcKey && stage.memory.valid && !stage.memory.store,
         True
       )
@@ -224,7 +224,7 @@ case class ExecMemoryStage(
   var maskedAluOutput = io.aluStage.throwWhen(nextExc.valid && !wasBranch)
   if (c.splitAluMem) {
     maskedAluOutput = maskedAluOutput.stage()
-    provideBypassResource(maskedAluOutput)
+    provideBypassResource(maskedAluOutput.asFlow, 0)
   }
 
   val (maskedAluOutputToMem, maskedAluOutputToStage) = StreamFork2(
@@ -263,10 +263,21 @@ case class ExecMemoryStage(
   outData.exc := maskedAluOutputStaged.exc
   outData.br := maskedAluOutputStaged.br
 
-  io.output << StreamJoin(maskedAluOutputStaged, io.dataMem.response)
+  val output = StreamJoin(maskedAluOutputStaged, io.dataMem.response)
     .translateWith(outData)
 
-  provideBypassResource(maskedAluOutputStaged)
+  io.output << output
+
+  val bypassCtx = AluStageInsnContext(c)
+  bypassCtx := maskedAluOutputStaged
+
+  when(output.valid) {
+    bypassCtx.regWritebackValid := output.regWritebackValid
+    bypassCtx.regWriteback := output.payload.regWriteback
+    bypassCtx.memory.valid := False
+  }
+
+  provideBypassResource(maskedAluOutputStaged.asFlow.translateWith(bypassCtx), 1)
 }
 
 case class ExecAluStage(c: ExecConfig) extends Component {

@@ -53,7 +53,8 @@ class Wbpf
           insnBuffer = InsnBufferConfig(
             addrWidth = 10
           ),
-          regFetch = RegfetchConfig()
+          regFetch = RegfetchConfig(),
+          splitAluMem = false
         ),
         dataMemSize = 1024,
         numPe = 2
