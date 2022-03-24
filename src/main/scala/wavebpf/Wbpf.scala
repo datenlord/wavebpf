@@ -31,18 +31,26 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     pe.io.dm.response << dm.response
     pe
   })
-  val mmioDecoder = Axi4WriteOnlyDecoder(
-    MMIOBusConfigV2(),
-    peList.zipWithIndex.map(x =>
-      SizeMapping(base = 0x1000 + x._2 * 0x1000, size = 0x1000)
-    )
+  val addrMappings = peList.zipWithIndex.map(x =>
+    SizeMapping(base = 0x1000 + x._2 * 0x1000, size = 0x1000)
   )
-  io.mmio.ar.setBlocked()
-  io.mmio.r.setIdle()
-  mmioDecoder.io.input << io.mmio
-  mmioDecoder.io.outputs
+  val mmioWriteDecoder = Axi4WriteOnlyDecoder(
+    MMIOBusConfigV2(),
+    addrMappings
+  )
+  mmioWriteDecoder.io.input << io.mmio
+  mmioWriteDecoder.io.outputs
     .zip(peList)
-    .foreach(x => x._2.io.mmio << x._1.toAxi4())
+    .foreach(x => x._2.io.mmio << x._1)
+  val mmioReadDecoder = Axi4ReadOnlyDecoder(
+    MMIOBusConfigV2(),
+    addrMappings
+  )
+  mmioReadDecoder.io.input << io.mmio
+  mmioReadDecoder.io.outputs
+    .zip(peList)
+    .foreach(x => x._2.io.mmio << x._1)
+
   io.excOutput.zip(peList).foreach(x => x._1 := x._2.io.excOutput)
 }
 

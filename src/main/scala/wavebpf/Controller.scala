@@ -30,7 +30,7 @@ case class Controller(
   mmio.setBlocked()
 
   val awSnapshot = Reg(Axi4Aw(MMIOBusConfigV2()))
-  val writeAddr = awSnapshot.addr(7 downto 3)
+  val writeAddr = awSnapshot.addr(11 downto 3)
 
   mmio.b.payload.id := awSnapshot.id
 
@@ -84,6 +84,40 @@ case class Controller(
         mmio.b.valid := True
         when(mmio.b.ready) {
           goto(waitForAw)
+        }
+      }
+    }
+  }
+
+  val arSnapshot = Reg(Axi4Ar(MMIOBusConfigV2()))
+  val readAddr = arSnapshot.addr(11 downto 3)
+
+  val readFsm = new StateMachine {
+    val waitForAr: State = new State with EntryPoint {
+      whenIsActive {
+        when(mmio.ar.valid) {
+          mmio.ar.ready := True
+          arSnapshot := mmio.ar.payload
+          goto(sendReadRsp)
+        }
+      }
+    }
+    val sendReadRsp: State = new State {
+      whenIsActive {
+        mmio.r.valid := True
+        mmio.r.payload.id := arSnapshot.id
+        mmio.r.payload.last := True
+
+        switch(readAddr) {
+          is(0x00) {
+            mmio.r.payload.data := refillCounter.asBits.resized
+          }
+          default {
+            mmio.r.payload.data := 0
+          }
+        }
+        when(mmio.r.ready) {
+          goto(waitForAr)
         }
       }
     }
