@@ -11,7 +11,7 @@ class SimMemAddSpec extends AnyFunSuite {
   test("SimMemAdd") {
     import SimUtil._
     SimConfig.withWave.doSim(new Wbpf) { dut =>
-      dut.clockDomain.forkStimulus(10)
+      initDutForTesting(dut)
 
       /*
       void memAdd() {
@@ -44,7 +44,6 @@ class SimMemAddSpec extends AnyFunSuite {
       assert(dut.io.excOutput.code.toEnum == CpuExceptionCode.NOT_INIT)
 
       mmioWrite(dut, 0x03, 0x00)
-      mmioEndWrite(dut)
       assert(dut.io.excOutput.code.toEnum == CpuExceptionCode.NOT_INIT)
       dut.clockDomain.waitSampling()
       assert(dut.io.excOutput.code.toEnum == CpuExceptionCode.NOT_INIT)

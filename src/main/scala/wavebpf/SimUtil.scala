@@ -25,7 +25,12 @@ object SimUtil {
     dut.io.dataMem.response.payload.data.toBigInt
   }
 
-  def dmWriteOnce(dut: Wbpf, addr: BigInt, word: BigInt, width: SpinalEnumElement[MemoryAccessWidth.type] = MemoryAccessWidth.W8) {
+  def dmWriteOnce(
+      dut: Wbpf,
+      addr: BigInt,
+      word: BigInt,
+      width: SpinalEnumElement[MemoryAccessWidth.type] = MemoryAccessWidth.W8
+  ) {
     dut.io.dataMem.request.valid #= true
     dut.io.dataMem.request.write #= true
     dut.io.dataMem.request.addr #= addr
@@ -45,26 +50,41 @@ object SimUtil {
     }
   }
 
-  def mmioWrite(dut: Wbpf, addr: Long, value: Long) {
-    dut.io.mmio.CYC #= true
-    dut.io.mmio.STB #= true
-    dut.io.mmio.ADR #= addr
-    dut.io.mmio.DAT_MOSI #= value
-    dut.io.mmio.WE #= true
-    dut.clockDomain.waitSampling()
-    assert(dut.io.mmio.ACK.toBoolean == true)
+  def initDutForTesting(dut: Wbpf) {
+    dut.io.dataMem.request.valid #= false
+    dut.io.dataMem.response.ready #= false
+    dut.io.mmio.ar.valid #= false
+    dut.io.mmio.aw.valid #= false
+    dut.io.mmio.w.valid #= false
+    dut.io.mmio.b.ready #= false
+    dut.io.mmio.r.ready #= false
+    dut.clockDomain.forkStimulus(10)
+    waitUntil(dut.clockDomain.isResetAsserted)
+    waitUntil(dut.clockDomain.isResetDeasserted)
   }
 
-  def mmioEndWrite(dut: Wbpf) {
-    dut.io.mmio.CYC #= false
-    dut.io.mmio.STB #= false
+  def mmioWrite(dut: Wbpf, addr: Long, value: Long) {
+    dut.io.mmio.aw.valid #= true
+    dut.io.mmio.aw.payload.addr #= addr * 8
+    waitUntil(dut.io.mmio.aw.ready.toBoolean)
     dut.clockDomain.waitSampling()
-    assert(dut.io.mmio.ACK.toBoolean == false)
+    dut.io.mmio.aw.valid #= false
+
+    dut.io.mmio.w.valid #= true
+    dut.io.mmio.w.payload.data #= value
+    dut.io.mmio.w.payload.last #= true
+    waitUntil(dut.io.mmio.w.ready.toBoolean)
+    dut.clockDomain.waitSampling()
+    dut.io.mmio.w.valid #= false
+
+    waitUntil(dut.io.mmio.b.valid.toBoolean)
+    dut.io.mmio.b.ready #= true
+    dut.clockDomain.waitSampling()
+    dut.io.mmio.b.ready #= false
   }
 
   def loadCode(dut: Wbpf, baseAddr: Long, code: Array[Byte]) {
     mmioWrite(dut, 0x00, baseAddr)
-    mmioEndWrite(dut)
 
     var upperHalf = false
     var buffer: Int = 0
@@ -85,7 +105,5 @@ object SimUtil {
         buffer = 0
       }
     }
-
-    mmioEndWrite(dut)
   }
 }

@@ -2,7 +2,7 @@ package wavebpf
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.wishbone._
+import spinal.lib.bus.amba4.axi._
 
 case class WbpfConfig(
     insnBuffer: InsnBufferConfig,
@@ -21,7 +21,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
   var pcUpdater = new PcUpdater(pcmgr)
   val io = new Bundle {
     val dataMem = slave(dataMemory.use())
-    val mmio = slave(Wishbone(MMIOBusConfig()))
+    val mmio = slave(Axi4(MMIOBusConfigV2()))
     val excOutput = out(CpuException())
   }
 
