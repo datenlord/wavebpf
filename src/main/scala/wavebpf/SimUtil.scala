@@ -53,15 +53,19 @@ object SimUtil {
   }
 
   def dmWriteBytesAxi4(dut: CustomWbpf, addr: Long, data: Seq[Byte]) {
+    assert(data.length > 0 && data.length < 256)
+
     dut.io.dataMemAxi4.aw.valid #= true
     dut.io.dataMemAxi4.aw.payload.addr #= addr
     dut.io.dataMemAxi4.aw.payload.size #= 0x0
+    dut.io.dataMemAxi4.aw.payload.len #= data.length - 1
+    dut.io.dataMemAxi4.aw.payload.burst #= 1
     dut.clockDomain.waitSamplingWhere(dut.io.dataMemAxi4.aw.ready.toBoolean)
     dut.io.dataMemAxi4.aw.valid #= false
 
     for ((b_, i) <- data.zipWithIndex) {
       val b = b_.toShort & 0xff
-      val shiftBytes = (addr.toInt + i) % 8
+      val shiftBytes = (addr.toInt + i) % 4
       val strb = 1 << shiftBytes
       val shiftedData = BigInt(b) << (shiftBytes * 8)
       dut.io.dataMemAxi4.w.valid #= true

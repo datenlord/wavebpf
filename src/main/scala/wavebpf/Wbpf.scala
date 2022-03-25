@@ -22,7 +22,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     val excOutput = out(
       Vec(for (i <- 0 until config.numPe) yield new CpuException())
     )
-    val dataMemAxi4 = slave(Axi4(DataMemV2Axi4PortConfig()))
+    val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
     val dataMem = slave(dataMemory.use())
   }
   val peList = (0 until config.numPe).map(i => {
@@ -54,8 +54,14 @@ class CustomWbpf(config: WbpfConfig) extends Component {
 
   io.excOutput.zip(peList).foreach(x => x._1 := x._2.io.excOutput)
 
-  dataMemory.use().toAxi4WriteOnly() << io.dataMemAxi4
-  dataMemory.use().toAxi4ReadOnly() << io.dataMemAxi4
+  val dataMemAxi4 = Axi4(DataMemV2Axi4PortConfig())
+
+  dataMemory.use().toAxi4WriteOnly() << dataMemAxi4
+  dataMemory.use().toAxi4ReadOnly() << dataMemAxi4
+
+  val dmUpsizer = Axi4Upsizer(io.dataMemAxi4.config, dataMemAxi4.config, 4)
+  io.dataMemAxi4 >> dmUpsizer.io.input
+  dmUpsizer.io.output >> dataMemAxi4
 }
 
 object DefaultWbpfConfig {

@@ -80,6 +80,7 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
             axi.w.ready := request.ready
 
             when(axi.w.fire) {
+              //report(Seq("AXI W fire ", awSnapshot.addr, " ", axi.w.payload.data, " ", axi.w.strb))
               awSnapshot.addr := awSnapshot.addr + WbpfUtil.decodeAxSize(
                 awSnapshot.size
               )
@@ -92,6 +93,7 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
         val sendWriteRsp: State = new State {
           whenIsActive {
             axi.b.valid := True
+            axi.b.payload.resp := 0 // OKAY
             when(axi.b.ready) {
               goto(waitForAw)
             }
@@ -192,6 +194,14 @@ object DataMemV2Axi4PortConfig {
   def apply() = Axi4Config(
     addressWidth = 32,
     dataWidth = 64,
+    idWidth = 4
+  )
+}
+
+object DataMemV2Axi4DownsizedPortConfig {
+  def apply() = Axi4Config(
+    addressWidth = 32,
+    dataWidth = 32,
     idWidth = 4
   )
 }

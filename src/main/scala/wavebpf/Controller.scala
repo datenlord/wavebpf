@@ -78,6 +78,7 @@ case class Controller(
     val sendWriteRsp: State = new State {
       whenIsActive {
         mmio.b.valid := True
+        mmio.b.payload.resp := 0 // OKAY
         when(mmio.b.ready) {
           goto(waitForAw)
         }
