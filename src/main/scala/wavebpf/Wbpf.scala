@@ -75,14 +75,26 @@ object DefaultWbpfConfig {
         splitAluMem = true
       ),
       dataMemSize = 1024,
-      numPe = 2
+      numPe = 4
     )
 }
 class Wbpf extends CustomWbpf(DefaultWbpfConfig()) {}
 
+class WbpfSynth extends Component {
+  val io = new Bundle {
+    val mmio = slave(Axi4(MMIOBusConfigV2()))
+    val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
+  }
+  val wbpf = new Wbpf()
+  wbpf.io.dataMem.request.setIdle()
+  wbpf.io.dataMem.response.setBlocked()
+  wbpf.io.mmio << io.mmio
+  wbpf.io.dataMemAxi4 << io.dataMemAxi4
+}
+
 object WbpfVerilog {
   def main(args: Array[String]): Unit = {
-    SpinalVerilog(new Wbpf)
+    SpinalVerilog(new WbpfSynth)
   }
 }
 
@@ -93,6 +105,6 @@ object SyncResetSpinalConfig
 
 object WbpfVerilogSyncReset {
   def main(args: Array[String]) {
-    SyncResetSpinalConfig.generateVerilog(new Wbpf)
+    SyncResetSpinalConfig.generateVerilog(new WbpfSynth)
   }
 }
