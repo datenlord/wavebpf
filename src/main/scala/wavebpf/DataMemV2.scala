@@ -141,7 +141,7 @@ case class DataMemV2Core(c: DataMemConfig) extends Component {
   val stagedReq = io.req.stage()
 
   val rspData = new DataMemResponse()
-  rspData.data := memBody.readSync(address = wordAddr.resized)
+  rspData.data := memBody.readSync(address = wordAddr.resized, enable = io.req.valid)
   rspData.ctx := stagedReq.ctx
 
   stagedReq.translateWith(rspData) >> io.rsp

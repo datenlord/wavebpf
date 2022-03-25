@@ -232,6 +232,8 @@ case class ExecMemoryStage(
   if (c.splitAluMem) {
     maskedAluOutput = maskedAluOutput.stage()
     provideBypassResource(maskedAluOutput.asFlow, 0)
+    maskedAluOutput = maskedAluOutput.s2mPipe()
+    provideBypassResource(maskedAluOutput.asFlow, 1)
   }
 
   val (maskedAluOutputToMem, maskedAluOutputToStage) = StreamFork2(
@@ -246,7 +248,9 @@ case class ExecMemoryStage(
   memReq.width := maskedAluOutput.memory.width
   memReq.precomputedStrbValid := False
   memReq.precomputedStrb.assignDontCare()
-  maskedAluOutputToMem.translateWith(memReq) >> io.dataMem.request
+  maskedAluOutputToMem
+    .throwWhen(!maskedAluOutputToMem.memory.valid)
+    .translateWith(memReq) >> io.dataMem.request
 
   val maskedAluOutputStaged = maskedAluOutputToStage.stage()
 
@@ -271,7 +275,15 @@ case class ExecMemoryStage(
     )
   outData.br := maskedAluOutputStaged.br
 
-  val output = StreamJoin(maskedAluOutputStaged, io.dataMem.response)
+  val dmRsp = Stream(DataMemResponse())
+  dmRsp << io.dataMem.response
+
+  // Do not wait for memory response if we did not issue a request
+  when(!maskedAluOutputStaged.memory.valid) {
+    dmRsp.valid := True
+  }
+
+  val output = StreamJoin(maskedAluOutputStaged, dmRsp)
     .translateWith(outData)
 
   io.output << output
@@ -287,7 +299,7 @@ case class ExecMemoryStage(
 
   provideBypassResource(
     maskedAluOutputStaged.asFlow.translateWith(bypassCtx),
-    1
+    2
   )
 }
 

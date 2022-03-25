@@ -62,7 +62,7 @@ class Wbpf
             addrWidth = 10
           ),
           regFetch = RegfetchConfig(),
-          splitAluMem = false
+          splitAluMem = true
         ),
         dataMemSize = 1024,
         numPe = 2
