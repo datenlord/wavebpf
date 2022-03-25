@@ -31,6 +31,19 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
     slave(response)
   }
 
+  def toAxi4ReadOnly(): Axi4ReadOnly = {
+    val area = new Area {
+      val axiMaster = Axi4ReadOnly(DataMemV2Axi4PortConfig())
+      val axi = Axi4ReadOnly(DataMemV2Axi4PortConfig())
+      axi.ar << axiMaster.ar.s2mPipe()
+      axi.r >> axiMaster.r
+      axi.setBlocked()
+      request.setIdle()
+      response.freeRun()
+    }
+    area.axiMaster
+  }
+
   def toAxi4WriteOnly(): Axi4WriteOnly = {
     val area = new Area {
       val axiMaster = Axi4WriteOnly(DataMemV2Axi4PortConfig())
@@ -38,8 +51,11 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
       axi.aw << axiMaster.aw.s2mPipe()
       axi.w << axiMaster.w.s2mPipe()
       axi.b >> axiMaster.b
-      axi.setIdle()
+      axi.setBlocked()
       val awSnapshot = Reg(Axi4Aw(MMIOBusConfigV2()))
+
+      request.setIdle()
+      response.freeRun()
 
       val writeFsm = new StateMachine {
         val waitForAw: State = new State with EntryPoint {
@@ -57,7 +73,10 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
             request.payload.precomputedStrbValid := True
             request.payload.precomputedStrb := axi.w.strb
             request.payload.ctx.assignDontCare()
-            request.payload.addr := awSnapshot.addr
+            request.payload.addr := (U(
+              0,
+              32 bits
+            ).asBits ## awSnapshot.addr.asBits).asUInt
             request.payload.write := True
             request.payload.width.assignDontCare()
             request.payload.data := axi.w.payload.data
@@ -174,7 +193,7 @@ case class DataMemConfig(
 
 object DataMemV2Axi4PortConfig {
   def apply() = Axi4Config(
-    addressWidth = 64,
+    addressWidth = 32,
     dataWidth = 64,
     idWidth = 4
   )

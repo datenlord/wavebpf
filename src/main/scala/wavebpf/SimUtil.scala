@@ -52,6 +52,31 @@ object SimUtil {
     }
   }
 
+  def dmWriteBytesAxi4(dut: CustomWbpf, addr: Long, data: Seq[Byte]) {
+    dut.io.dataMemAxi4.aw.valid #= true
+    dut.io.dataMemAxi4.aw.payload.addr #= addr
+    dut.io.dataMemAxi4.aw.payload.size #= 0x0
+    dut.clockDomain.waitSamplingWhere(dut.io.dataMemAxi4.aw.ready.toBoolean)
+    dut.io.dataMemAxi4.aw.valid #= false
+
+    for ((b_, i) <- data.zipWithIndex) {
+      val b = b_.toShort & 0xff
+      val shiftBytes = (addr.toInt + i) % 8
+      val strb = 1 << shiftBytes
+      val shiftedData = BigInt(b) << (shiftBytes * 8)
+      dut.io.dataMemAxi4.w.valid #= true
+      dut.io.dataMemAxi4.w.payload.data #= shiftedData
+      dut.io.dataMemAxi4.w.payload.strb #= strb
+      dut.io.dataMemAxi4.w.payload.last #= i + 1 == data.length
+      dut.clockDomain.waitSamplingWhere(dut.io.dataMemAxi4.w.ready.toBoolean)
+    }
+    dut.io.dataMemAxi4.w.valid #= false
+    dut.clockDomain.waitSamplingWhere(dut.io.dataMemAxi4.b.valid.toBoolean)
+    dut.io.dataMemAxi4.b.ready #= true
+    dut.clockDomain.waitSampling()
+    dut.io.dataMemAxi4.b.ready #= false
+  }
+
   def initDutForTesting(dut: CustomWbpf) {
     dut.io.dataMem.request.valid #= false
     dut.io.dataMem.response.ready #= false
@@ -60,6 +85,11 @@ object SimUtil {
     dut.io.mmio.w.valid #= false
     dut.io.mmio.b.ready #= false
     dut.io.mmio.r.ready #= false
+    dut.io.dataMemAxi4.ar.valid #= false
+    dut.io.dataMemAxi4.aw.valid #= false
+    dut.io.dataMemAxi4.w.valid #= false
+    dut.io.dataMemAxi4.b.ready #= false
+    dut.io.dataMemAxi4.r.ready #= false
     dut.clockDomain.forkStimulus(10)
     waitUntil(dut.clockDomain.isResetAsserted)
     waitUntil(dut.clockDomain.isResetDeasserted)
@@ -69,19 +99,16 @@ object SimUtil {
     // println("Write MMIO " + addr + " " + value)
     dut.io.mmio.aw.valid #= true
     dut.io.mmio.aw.payload.addr #= addr
-    dut.clockDomain.waitSampling()
-    waitUntil(dut.io.mmio.aw.ready.toBoolean)
+    dut.clockDomain.waitSamplingWhere(dut.io.mmio.aw.ready.toBoolean)
     dut.io.mmio.aw.valid #= false
 
     dut.io.mmio.w.valid #= true
     dut.io.mmio.w.payload.data #= value
     dut.io.mmio.w.payload.last #= true
-    dut.clockDomain.waitSampling()
-    waitUntil(dut.io.mmio.w.ready.toBoolean)
+    dut.clockDomain.waitSamplingWhere(dut.io.mmio.w.ready.toBoolean)
     dut.io.mmio.w.valid #= false
 
-    waitUntil(dut.io.mmio.b.valid.toBoolean)
-    dut.clockDomain.waitSampling()
+    dut.clockDomain.waitSamplingWhere(dut.io.mmio.b.valid.toBoolean)
     dut.io.mmio.b.ready #= true
     dut.clockDomain.waitSampling()
     dut.io.mmio.b.ready #= false
@@ -91,12 +118,10 @@ object SimUtil {
     // println("Read MMIO " + addr)
     dut.io.mmio.ar.valid #= true
     dut.io.mmio.ar.payload.addr #= addr
-    dut.clockDomain.waitSampling()
-    waitUntil(dut.io.mmio.ar.ready.toBoolean)
+    dut.clockDomain.waitSamplingWhere(dut.io.mmio.ar.ready.toBoolean)
     dut.io.mmio.ar.valid #= false
 
-    waitUntil(dut.io.mmio.r.valid.toBoolean)
-    dut.clockDomain.waitSampling()
+    dut.clockDomain.waitSamplingWhere(dut.io.mmio.r.valid.toBoolean)
     assert(dut.io.mmio.r.last.toBoolean)
     val ret = dut.io.mmio.r.payload.data.toBigInt
     dut.io.mmio.r.ready #= true
@@ -106,7 +131,12 @@ object SimUtil {
     ret
   }
 
-  def loadCode(dut: CustomWbpf, coreIndex: Int, baseAddr: Long, code: Array[Byte]) {
+  def loadCode(
+      dut: CustomWbpf,
+      coreIndex: Int,
+      baseAddr: Long,
+      code: Array[Byte]
+  ) {
     mmioWrite(dut, 0x1000 * (coreIndex + 1), baseAddr)
 
     var upperHalf = false

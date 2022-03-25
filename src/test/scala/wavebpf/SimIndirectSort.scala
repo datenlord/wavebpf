@@ -95,7 +95,7 @@ class SimIndirectSortSpec extends AnyFunSuite {
         mmioWrite(dut, 0x18 + 0x1000 * (ci + 1), 0x00)
       }
 
-      waitUntil(!coreIndices.exists(i => dut.io.excOutput(i).valid.toBoolean))
+      dut.clockDomain.waitSamplingWhere(!coreIndices.exists(i => dut.io.excOutput(i).valid.toBoolean))
 
       var cycleCount = 0
       while (coreIndices.exists(i => !dut.io.excOutput(i).valid.toBoolean)) {

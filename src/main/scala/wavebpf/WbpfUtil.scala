@@ -5,7 +5,7 @@ import spinal.lib._
 
 object WbpfUtil {
   def decodeAxSize(axSize: UInt): UInt = {
-    val ret = UInt(64 bits)
+    val ret = UInt(32 bits)
     switch(axSize) {
       is(0x0) { ret := 1 }
       is(0x1) { ret := 2 }

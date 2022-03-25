@@ -53,7 +53,7 @@ class SimMemAddSpec extends AnyFunSuite {
       assert(mmioRead(dut, 0x1020) == 1) // code
 
       mmioWrite(dut, 0x1018, 0x00)
-      waitUntil(!firstExc.valid.toBoolean)
+      dut.clockDomain.waitSamplingWhere(!firstExc.valid.toBoolean)
       while (!firstExc.valid.toBoolean) {
         println("*** CLOCK CYCLE ***")
         dut.clockDomain.waitSampling()

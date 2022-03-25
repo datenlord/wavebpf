@@ -36,7 +36,7 @@ object WbpfSim {
       assert(firstExc.code.toEnum == CpuExceptionCode.NOT_INIT)
       mmioWrite(dut, 0x1018, 0x00)
 
-      waitUntil(
+      dut.clockDomain.waitSamplingWhere(
         !firstExc.valid.toBoolean || firstExc.code.toEnum != CpuExceptionCode.NOT_INIT
       )
       if (firstExc.valid.toBoolean) {
