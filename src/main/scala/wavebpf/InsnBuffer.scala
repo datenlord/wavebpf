@@ -30,7 +30,6 @@ case class InsnBufferReadRsp(c: InsnBufferConfig) extends Bundle {
 
 case class InsnBuffer(c: InsnBufferConfig) extends Component {
   val mem = Mem(Bits(64 bits), scala.math.pow(2, c.addrWidth).toInt)
-  mem.initialContent = (for(i <- 0 until mem.wordCount) yield BigInt("4242424242424242", 16)).toArray
 
   val io = new Bundle {
     val refill = slave Flow (InsnBufferRefillReq(c))

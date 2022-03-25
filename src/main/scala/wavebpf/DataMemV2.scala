@@ -124,8 +124,6 @@ case class DataMemV2Core(c: DataMemConfig) extends Component {
     val rsp = master(Stream(DataMemResponse()))
   }
   val memBody = Mem(Bits(64 bits), c.numWords)
-  memBody.initialContent =
-    Array.fill(memBody.wordCount)(BigInt("4343434343434343", 16))
 
   val wordAddr = io.req.addr >> 3
   memBody.write(
