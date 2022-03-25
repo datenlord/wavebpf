@@ -79,6 +79,7 @@ case class Controller(
       whenIsActive {
         mmio.b.valid := True
         mmio.b.payload.resp := 0 // OKAY
+        mmio.b.payload.id := awSnapshot.id
         when(mmio.b.ready) {
           goto(waitForAw)
         }
@@ -103,6 +104,7 @@ case class Controller(
     val sendReadRsp: State = new State {
       whenIsActive {
         mmio.r.valid := True
+        mmio.r.payload.resp := 0 // OKAY
         mmio.r.payload.id := arSnapshot.id
         mmio.r.payload.last := True
 
@@ -153,6 +155,6 @@ object MMIOBusConfigV2 {
   def apply() = Axi4Config(
     addressWidth = 32,
     dataWidth = 32,
-    idWidth = 4
+    idWidth = 16
   )
 }

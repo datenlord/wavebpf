@@ -94,6 +94,7 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
           whenIsActive {
             axi.b.valid := True
             axi.b.payload.resp := 0 // OKAY
+            axi.b.payload.id := awSnapshot.id
             when(axi.b.ready) {
               goto(waitForAw)
             }
@@ -194,7 +195,7 @@ object DataMemV2Axi4PortConfig {
   def apply() = Axi4Config(
     addressWidth = 32,
     dataWidth = 64,
-    idWidth = 4
+    idWidth = 16
   )
 }
 
@@ -202,6 +203,6 @@ object DataMemV2Axi4DownsizedPortConfig {
   def apply() = Axi4Config(
     addressWidth = 32,
     dataWidth = 32,
-    idWidth = 4
+    idWidth = 16
   )
 }
