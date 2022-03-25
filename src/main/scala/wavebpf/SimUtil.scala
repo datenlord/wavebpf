@@ -5,7 +5,7 @@ import spinal.sim._
 import spinal.core.sim._
 
 object SimUtil {
-  def dmReadOnce(dut: Wbpf, addr: BigInt): BigInt = {
+  def dmReadOnce(dut: CustomWbpf, addr: BigInt): BigInt = {
     dut.io.dataMem.request.valid #= true
     dut.io.dataMem.request.write #= false
     dut.io.dataMem.request.addr #= addr
@@ -27,7 +27,7 @@ object SimUtil {
   }
 
   def dmWriteOnce(
-      dut: Wbpf,
+      dut: CustomWbpf,
       addr: BigInt,
       word: BigInt,
       width: SpinalEnumElement[MemoryAccessWidth.type] = MemoryAccessWidth.W8
@@ -52,7 +52,7 @@ object SimUtil {
     }
   }
 
-  def initDutForTesting(dut: Wbpf) {
+  def initDutForTesting(dut: CustomWbpf) {
     dut.io.dataMem.request.valid #= false
     dut.io.dataMem.response.ready #= false
     dut.io.mmio.ar.valid #= false
@@ -65,7 +65,7 @@ object SimUtil {
     waitUntil(dut.clockDomain.isResetDeasserted)
   }
 
-  def mmioWrite(dut: Wbpf, addr: Long, value: Long) {
+  def mmioWrite(dut: CustomWbpf, addr: Long, value: Long) {
     // println("Write MMIO " + addr + " " + value)
     dut.io.mmio.aw.valid #= true
     dut.io.mmio.aw.payload.addr #= addr
@@ -87,7 +87,7 @@ object SimUtil {
     dut.io.mmio.b.ready #= false
   }
 
-  def mmioRead(dut: Wbpf, addr: Long): BigInt = {
+  def mmioRead(dut: CustomWbpf, addr: Long): BigInt = {
     // println("Read MMIO " + addr)
     dut.io.mmio.ar.valid #= true
     dut.io.mmio.ar.payload.addr #= addr
@@ -106,8 +106,8 @@ object SimUtil {
     ret
   }
 
-  def loadCode(dut: Wbpf, baseAddr: Long, code: Array[Byte]) {
-    mmioWrite(dut, 0x1000, baseAddr)
+  def loadCode(dut: CustomWbpf, coreIndex: Int, baseAddr: Long, code: Array[Byte]) {
+    mmioWrite(dut, 0x1000 * (coreIndex + 1), baseAddr)
 
     var upperHalf = false
     var buffer: Int = 0
@@ -120,7 +120,7 @@ object SimUtil {
       if (pos == 4) {
         mmioWrite(
           dut,
-          if (upperHalf) 0x1010 else 0x1008,
+          (if (upperHalf) 0x10 else 0x08) + 0x1000 * (coreIndex + 1),
           buffer.toLong & 0x00000000ffffffffL
         )
         upperHalf = !upperHalf

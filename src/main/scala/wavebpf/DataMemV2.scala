@@ -138,13 +138,18 @@ case class DataMemV2Core(c: DataMemConfig) extends Component {
     )
   )
 
-  val stagedReq = io.req.stage()
+  val (ioReqToStage, ioReqToRead) = StreamFork2(io.req)
+
+  val stagedReq = ioReqToStage.stage()
+  val readRsp = memBody.streamReadSync(
+    ioReqToRead.translateWith(wordAddr.resize(log2Up(c.numWords)))
+  )
 
   val rspData = new DataMemResponse()
-  rspData.data := memBody.readSync(address = wordAddr.resized, enable = io.req.valid)
+  rspData.data := readRsp.payload
   rspData.ctx := stagedReq.ctx
 
-  stagedReq.translateWith(rspData) >> io.rsp
+  StreamJoin(stagedReq, readRsp).translateWith(rspData) >> io.rsp
 }
 
 case class DataMemV2(c: DataMemConfig) extends Area {

@@ -30,7 +30,9 @@ object MemoryAccessWidth extends SpinalEnum(binarySequential) {
 case class ExecConfig(
     insnFetch: InsnBufferConfig,
     regFetch: RegfetchConfig,
-    splitAluMem: Boolean
+    splitAluMem: Boolean,
+    reportCommit: Boolean,
+    coreIndex: Int
 )
 
 case class AluStageInsnContext(
@@ -136,20 +138,23 @@ case class Exec(c: ExecConfig) extends Component {
     .throwWhen(!memStage.io.output.payload.br.valid)
     .translateWith(pcUpdateReq) >> io.branchPcUpdater
 
-  when(memOutputFlow.fire) {
-    report(
-      Seq(
-        "COMMIT",
-        " pc=",
-        memStage.io.output.payload.insnFetch.addr,
-        " regwb=",
-        memStage.io.output.payload.regWritebackValid,
-        " regwb.index=",
-        memStage.io.output.payload.regWriteback.index,
-        " regwb.data=",
-        memStage.io.output.payload.regWriteback.data
+  if (c.reportCommit) {
+    when(memOutputFlow.fire) {
+      report(
+        Seq(
+          "COMMIT",
+          " core=" + c.coreIndex,
+          " pc=",
+          memStage.io.output.payload.insnFetch.addr,
+          " regwb=",
+          memStage.io.output.payload.regWritebackValid,
+          " regwb.index=",
+          memStage.io.output.payload.regWriteback.index,
+          " regwb.data=",
+          memStage.io.output.payload.regWriteback.data
+        )
       )
-    )
+    }
   }
 }
 
@@ -195,10 +200,10 @@ case class ExecMemoryStage(
   excRegInit.data := 0
   excRegInit.pc := 0
 
-  val excReg = Reg(new CpuException()) init (excRegInit)
+  val nextExc = new CpuException()
+  val excReg = RegNextWhen(next = nextExc, cond = io.aluStage.fire, init = excRegInit)
   io.excOutput := excReg
 
-  val nextExc = new CpuException()
   val wasBranch = Bool(false)
 
   when(
@@ -225,8 +230,6 @@ case class ExecMemoryStage(
   } otherwise {
     nextExc := excReg
   }
-
-  excReg := nextExc
 
   var maskedAluOutput = io.aluStage.throwWhen(nextExc.valid && !wasBranch)
   if (c.splitAluMem) {
@@ -275,15 +278,18 @@ case class ExecMemoryStage(
     )
   outData.br := maskedAluOutputStaged.br
 
-  val dmRsp = Stream(DataMemResponse())
-  dmRsp << io.dataMem.response
+  val dmRspAlwaysValid = Stream(DataMemResponse())
+  dmRspAlwaysValid.valid := True
+  dmRspAlwaysValid.payload.assignDontCare()
 
   // Do not wait for memory response if we did not issue a request
-  when(!maskedAluOutputStaged.memory.valid) {
-    dmRsp.valid := True
-  }
+  val dmRspMux = StreamMux(
+    maskedAluOutputStaged.memory.valid
+      .mux((False, U(0, 1 bits)), (True, U(1, 1 bits))),
+    Vec(dmRspAlwaysValid, io.dataMem.response)
+  )
 
-  val output = StreamJoin(maskedAluOutputStaged, dmRsp)
+  val output = StreamJoin(maskedAluOutputStaged, dmRspMux)
     .translateWith(outData)
 
   io.output << output
@@ -506,6 +512,23 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       exc.valid := True
       exc.code := CpuExceptionCode.EXIT
       exc.data := 0
+    }
+    is(0x85) {
+      // call
+      switch(imm(7 downto 0)) {
+        is(0x01) {
+          // get core index
+          regWritebackValid := True
+          regWritebackData.index := 0
+          regWritebackData.data := c.coreIndex
+        }
+        default {
+          // exception
+          exc.valid := True
+          exc.code := CpuExceptionCode.CALL
+          exc.data := imm
+        }
+      }
     }
     default {
       exc.valid := True

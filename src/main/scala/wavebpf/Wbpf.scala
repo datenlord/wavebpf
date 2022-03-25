@@ -25,7 +25,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     val dataMem = slave(dataMemory.use())
   }
   val peList = (0 until config.numPe).map(i => {
-    val pe = new ProcessingElement(config.pe)
+    val pe = new ProcessingElement(config.pe, i)
     val dm = dataMemory.use()
     pe.io.dm.request >> dm.request
     pe.io.dm.response << dm.response
@@ -54,20 +54,21 @@ class CustomWbpf(config: WbpfConfig) extends Component {
   io.excOutput.zip(peList).foreach(x => x._1 := x._2.io.excOutput)
 }
 
-class Wbpf
-    extends CustomWbpf(
-      WbpfConfig(
-        pe = PeConfig(
-          insnBuffer = InsnBufferConfig(
-            addrWidth = 10
-          ),
-          regFetch = RegfetchConfig(),
-          splitAluMem = true
+object DefaultWbpfConfig {
+  def apply() =
+    WbpfConfig(
+      pe = PeConfig(
+        insnBuffer = InsnBufferConfig(
+          addrWidth = 10
         ),
-        dataMemSize = 1024,
-        numPe = 2
-      )
-    ) {}
+        regFetch = RegfetchConfig(),
+        splitAluMem = true
+      ),
+      dataMemSize = 1024,
+      numPe = 2
+    )
+}
+class Wbpf extends CustomWbpf(DefaultWbpfConfig()) {}
 
 object WbpfVerilog {
   def main(args: Array[String]): Unit = {

@@ -24,7 +24,7 @@ object WbpfSim {
     }
     SimConfig.withWave.doSim(new Wbpf) { dut =>
       initDutForTesting(dut)
-      loadCode(dut, 0x0, bytes)
+      loadCode(dut, 0, 0x0, bytes)
 
       for ((b, i) <- dmImage.zipWithIndex) {
         dmWriteOnce(dut, i, b, MemoryAccessWidth.W1)

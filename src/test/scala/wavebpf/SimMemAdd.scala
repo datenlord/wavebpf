@@ -25,6 +25,7 @@ class SimMemAddSpec extends AnyFunSuite {
        */
       loadCode(
         dut,
+        0,
         0x0,
         Array[Short](
           0xb7, 0x01, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, // r1 = 0x10

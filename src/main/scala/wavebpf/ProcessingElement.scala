@@ -7,11 +7,12 @@ import spinal.lib.bus.amba4.axi._
 case class PeConfig(
     insnBuffer: InsnBufferConfig,
     regFetch: RegfetchConfig,
-    splitAluMem: Boolean = false
+    splitAluMem: Boolean = false,
+    reportCommit: Boolean = true
 )
 
-case class ProcessingElement(config: PeConfig) extends Component {
-  val pcmgr = new PcManager(c = config.insnBuffer)
+case class ProcessingElement(config: PeConfig, coreIndex: Int) extends Component {
+  val pcmgr = new PcManager(c = config.insnBuffer, coreIndex = coreIndex)
   var pcUpdater = new PcUpdater(pcmgr)
   val io = new Bundle {
     val mmio = slave(Axi4(MMIOBusConfigV2()))
@@ -45,7 +46,9 @@ case class ProcessingElement(config: PeConfig) extends Component {
     c = ExecConfig(
       insnFetch = config.insnBuffer,
       regFetch = config.regFetch,
-      splitAluMem = config.splitAluMem
+      splitAluMem = config.splitAluMem,
+      reportCommit = config.reportCommit,
+      coreIndex = coreIndex
     )
   )
   exec.io.regFetch << regfile.io.readRsp
