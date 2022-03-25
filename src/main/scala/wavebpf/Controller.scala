@@ -22,12 +22,7 @@ case class Controller(
 
   io.refill.setIdle()
 
-  val mmio = Axi4(MMIOBusConfigV2())
-  mmio.ar << io.mmio.ar.s2mPipe()
-  mmio.aw << io.mmio.aw.s2mPipe()
-  mmio.w << io.mmio.w.s2mPipe()
-  mmio.r >> io.mmio.r
-  mmio.b >> io.mmio.b
+  val mmio = WbpfUtil.axi4Pipe(io.mmio)
   mmio.setBlocked()
 
   val awSnapshot = Reg(Axi4Aw(MMIOBusConfigV2()))

@@ -47,10 +47,7 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
   def toAxi4WriteOnly(): Axi4WriteOnly = {
     val area = new Area {
       val axiMaster = Axi4WriteOnly(DataMemV2Axi4PortConfig())
-      val axi = Axi4WriteOnly(DataMemV2Axi4PortConfig())
-      axi.aw << axiMaster.aw.s2mPipe()
-      axi.w << axiMaster.w.s2mPipe()
-      axi.b >> axiMaster.b
+      val axi = WbpfUtil.axi4Pipe(axiMaster)
       axi.setBlocked()
       val awSnapshot = Reg(Axi4Aw(MMIOBusConfigV2()))
 
