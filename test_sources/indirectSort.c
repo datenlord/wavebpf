@@ -4,7 +4,9 @@ void indirectSort()
 {
   long coreOffset = getCoreIndex() << 3;
   long stackAddr = 0x2000 - coreOffset * 0x100;
-  asm volatile("r10 = %0" : : "r"(stackAddr));
+  asm volatile("r10 = %0"
+               :
+               : "r"(stackAddr));
 
   long len = *(long *)0x08;
 

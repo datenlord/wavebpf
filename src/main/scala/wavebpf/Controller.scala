@@ -72,7 +72,7 @@ case class Controller(
                 io.pcUpdater.payload.pc := mmio.w.payload.data.asUInt.resized
                 io.pcUpdater.payload.flush := True
                 io.pcUpdater.payload.flushReason := PcFlushReasonCode.EXTERNAL
-                report(Seq("Update PC: ", mmio.w.payload.data.asUInt))
+                //report(Seq("Update PC: ", mmio.w.payload.data.asUInt))
               }
             }
             goto(sendWriteRsp)
