@@ -45,6 +45,7 @@ case class AluStageInsnContext(
   val exc = new CpuExceptionSkeleton()
   val memory = new MemoryAccessReq(c)
   val br = BranchReq()
+  val operand2IsReg = Bool()
 }
 
 case class MemoryAccessReq(
@@ -201,7 +202,8 @@ case class ExecMemoryStage(
   excRegInit.pc := 0
 
   val nextExc = new CpuException()
-  val excReg = RegNextWhen(next = nextExc, cond = io.aluStage.fire, init = excRegInit)
+  val excReg =
+    RegNextWhen(next = nextExc, cond = io.aluStage.fire, init = excRegInit)
   io.excOutput := excReg
 
   val wasBranch = Bool(false)
@@ -243,11 +245,17 @@ case class ExecMemoryStage(
     maskedAluOutput
   )
 
+  val operand2 = Mux[Bits](
+    sel = maskedAluOutput.operand2IsReg,
+    whenTrue = maskedAluOutput.regFetch.rs2.data,
+    whenFalse = maskedAluOutput.insnFetch.imm.asBits
+  )
+
   val memReq = DataMemRequest()
   memReq.addr := maskedAluOutput.memory.addr
   memReq.write := maskedAluOutput.memory.store
   memReq.ctx.assignDontCare()
-  memReq.data := maskedAluOutput.regFetch.rs2.data // TODO: imm
+  memReq.data := operand2
   memReq.width := maskedAluOutput.memory.width
   memReq.precomputedStrbValid := False
   memReq.precomputedStrb.assignDontCare()
@@ -318,17 +326,13 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   val opcode = io.insnFetch.payload.insn(7 downto 0)
   val rdIndex = io.insnFetch.payload.insn(11 downto 8).asUInt
-  val imm = io.insnFetch.payload.insn(63 downto 32).asSInt.resize(64).asUInt
+  val imm = io.insnFetch.payload.imm
   val rs1 = io.regFetch.payload.rs1.data.asUInt
   val rs2 = io.regFetch.payload.rs2.data.asUInt
   val offset = io.insnFetch.payload.insn(31 downto 16).asSInt.resize(64).asUInt
 
-  val operand2 = UInt(64 bits)
-  when(opcode(3)) {
-    operand2 := rs2
-  } otherwise {
-    operand2 := imm
-  }
+  val operand2IsReg = opcode(3)
+  val operand2 = Mux(sel = operand2IsReg, whenTrue = rs2, whenFalse = imm)
 
   val exc = new CpuExceptionSkeleton()
   exc.code.assignDontCare()
@@ -545,6 +549,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   ctxOut.exc := exc
   ctxOut.memory := memory
   ctxOut.br := br
+  ctxOut.operand2IsReg := operand2IsReg
 
   val outStream = StreamJoin
     .arg(io.regFetch, io.insnFetch)

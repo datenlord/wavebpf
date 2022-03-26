@@ -26,6 +26,8 @@ case class InsnBufferReadRsp(c: InsnBufferConfig) extends Bundle {
   val addr = UInt(c.addrWidth bits)
   val insn = Bits(64 bits)
   val ctx = InsnBufferReadContext()
+
+  def imm = this.insn(63 downto 32).asSInt.resize(64).asUInt
 }
 
 case class InsnBuffer(c: InsnBufferConfig) extends Component {
