@@ -5,11 +5,15 @@ import spinal.sim._
 import spinal.core.sim._
 
 object SimUtil {
-  def dmReadOnce(dut: CustomWbpf, addr: BigInt): BigInt = {
+  def dmReadOnce(
+      dut: CustomWbpf,
+      addr: BigInt,
+      width: SpinalEnumElement[MemoryAccessWidth.type] = MemoryAccessWidth.W8
+  ): BigInt = {
     dut.io.dataMem.request.valid #= true
     dut.io.dataMem.request.write #= false
     dut.io.dataMem.request.addr #= addr
-    dut.io.dataMem.request.width #= MemoryAccessWidth.W8
+    dut.io.dataMem.request.width #= width
     dut.io.dataMem.request.precomputedStrbValid #= false
     dut.io.dataMem.response.ready #= true
 
