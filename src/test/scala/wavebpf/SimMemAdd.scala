@@ -52,6 +52,8 @@ class SimMemAddSpec extends AnyFunSuite {
       assert(mmioRead(dut, 0x1018) == 0x0) // pc
       assert(mmioRead(dut, 0x1020) == 1) // code
 
+      assert(!dut.io.excInterrupt.toBoolean)
+
       mmioWrite(dut, 0x1018, 0x00)
       dut.clockDomain.waitSamplingWhere(!firstExc.valid.toBoolean)
       while (!firstExc.valid.toBoolean) {
@@ -59,6 +61,10 @@ class SimMemAddSpec extends AnyFunSuite {
         dut.clockDomain.waitSampling()
       }
       assert(firstExc.code.toEnum == CpuExceptionCode.EXIT)
+
+      assert(dut.io.excInterrupt.toBoolean)
+      mmioWrite(dut, 0x1020, 0x0)
+      assert(!dut.io.excInterrupt.toBoolean)
 
       assert(mmioRead(dut, 0x1018) == 0x38) // pc
       assert(mmioRead(dut, 0x1020) == 5) // code

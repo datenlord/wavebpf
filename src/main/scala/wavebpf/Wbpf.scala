@@ -26,6 +26,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     )
     val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
     val dataMem = slave(dataMemory.use())
+    val excInterrupt = out Bool ()
   }
   val peList = (0 until config.numPe).map(i => {
     val pe = new ProcessingElement(config.pe, i)
@@ -37,6 +38,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
   val addrMappings = peList.zipWithIndex.map(x =>
     SizeMapping(base = 0x1000 + x._2 * 0x1000, size = 0x1000)
   )
+  io.excInterrupt := peList.map(_.io.excInterrupt).reduce((a, b) => a || b)
   val mmioWriteDecoder = AxiLite4WriteOnlyDecoder(
     MMIOBusConfigV2(),
     addrMappings
@@ -101,12 +103,14 @@ class WbpfSynth extends Component {
   val io = new Bundle {
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
     val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
+    val excInterrupt = out Bool ()
   }
   val wbpf = new Wbpf()
   wbpf.io.dataMem.request.setIdle()
   wbpf.io.dataMem.response.setBlocked()
   wbpf.io.mmio << io.mmio
   wbpf.io.dataMemAxi4 << io.dataMemAxi4
+  io.excInterrupt := wbpf.io.excInterrupt
 }
 
 object WbpfVerilog {

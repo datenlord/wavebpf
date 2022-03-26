@@ -20,6 +20,7 @@ case class ProcessingElement(config: PeConfig, coreIndex: Int)
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
     val excOutput = out(new CpuException())
     val dm = master(DataMemV2Port())
+    val excInterrupt = out(Bool())
   }
 
   val controller =
@@ -78,4 +79,6 @@ case class ProcessingElement(config: PeConfig, coreIndex: Int)
 
   io.excOutput := excReport
   controller.io.excReport := excReport
+
+  io.excInterrupt := excReport.valid && (excReport.generation =/= excAck)
 }
