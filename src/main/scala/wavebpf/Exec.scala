@@ -69,7 +69,7 @@ case class MemoryStageInsnContext(
 
 case class BranchReq() extends Bundle {
   val valid = Bool()
-  val addr = UInt(61 bits)
+  val addr = UInt(29 bits)
 }
 
 case class Exec(c: ExecConfig) extends Component {
@@ -358,8 +358,8 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   val br = BranchReq()
   br.valid := False
-  br.addr := io.insnFetch.payload.addr.resize(61 bits) + 1 + offset.resize(
-    61 bits
+  br.addr := io.insnFetch.payload.addr.resize(29 bits) + 1 + offset.resize(
+    29 bits
   )
 
   val condEq = rs1 === operand2

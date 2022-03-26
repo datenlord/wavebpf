@@ -123,14 +123,6 @@ case class Controller(
               (True, data)
             )
           }
-          is(0x07) {
-            val pc = io.excReport.pc.asBits << 3
-            val data = pc(63 downto 32)
-            mmio.r.payload.data := io.excReport.valid.mux(
-              (False, U(0, 32 bits).asBits),
-              (True, data)
-            )
-          }
           is(0x08) {
             mmio.r.payload.data := io.excReport.valid.mux(
               (False, U(0, 32 bits).asBits),

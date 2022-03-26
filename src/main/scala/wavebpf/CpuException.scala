@@ -25,5 +25,5 @@ class CpuExceptionSkeleton() extends Bundle {
 }
 
 class CpuException() extends CpuExceptionSkeleton {
-  val pc = UInt(61 bits)
+  val pc = UInt(29 bits)
 }

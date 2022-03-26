@@ -5,7 +5,7 @@ import spinal.lib._
 import scala.collection.mutable.ArrayBuffer
 
 case class PcUpdateReq() extends Bundle {
-  val pc = UInt(61 bits)
+  val pc = UInt(29 bits)
   val flush = Bool()
   val flushReason = PcFlushReasonCode()
 }
@@ -16,12 +16,12 @@ object PcFlushReasonCode extends SpinalEnum(binarySequential) {
 
 class PcManager(c: InsnBufferConfig, coreIndex: Int) extends Component {
   val io = new Bundle {
-    val pc = out UInt (61 bits)
+    val pc = out UInt (29 bits)
     val stream = master Stream (InsnBufferReadReq(c))
     val update = slave Flow (PcUpdateReq())
   }
 
-  val currentPc = Reg(UInt(61 bits)) init (0)
+  val currentPc = Reg(UInt(29 bits)) init (0)
   val flush = RegInit(False)
   val flushReason = Reg(PcFlushReasonCode())
 
