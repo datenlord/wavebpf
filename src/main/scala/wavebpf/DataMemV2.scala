@@ -80,7 +80,7 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
             axi.w.ready := request.ready
 
             when(axi.w.fire) {
-              //report(Seq("AXI W fire ", awSnapshot.addr, " ", axi.w.payload.data, " ", axi.w.strb))
+              // report(Seq("AXI W fire ", awSnapshot.addr, " ", axi.w.payload.data, " ", axi.w.strb))
               awSnapshot.addr := awSnapshot.addr + WbpfUtil.decodeAxSize(
                 awSnapshot.size
               )
@@ -130,27 +130,47 @@ object DataMemV2Port {
 }
 
 case class DataMemV2Core(c: DataMemConfig) extends Component {
-  private def computeMask(
-      addr: UInt,
-      w: SpinalEnumCraft[MemoryAccessWidth.type]
-  ): Bits = {
-    val aligned = MemoryAccessWidth.alignedMask(w)
-    val misalignment = addr(2 downto 0)
-    (aligned << misalignment).resize(aligned.getBitsWidth)
+  case class ReqControl() extends Bundle {
+    val misalignment = UInt(3 bits)
+    val alignedMask = Bits(8 bits)
+    val mask = Bits(8 bits)
+
+    def expandedAlignedMask =
+      alignedMask.asBools.flatMap(x => Seq.fill(8)(x)).asBits()
   }
+
+  object ReqControl {
+    def compute(req: DataMemRequest): ReqControl = {
+      val ret = ReqControl()
+      ret.misalignment := req.addr(2 downto 0)
+      val aligned = MemoryAccessWidth.alignedMask(req.width)
+      ret.alignedMask := aligned
+      ret.mask := (aligned << ret.misalignment).resize(aligned.getBitsWidth)
+      ret
+    }
+  }
+
   val io = new Bundle {
     val req = slave(Stream(DataMemRequest()))
     val rsp = master(Stream(DataMemResponse()))
   }
+  val reqControl = ReqControl.compute(io.req.payload)
   val memBody = Mem(Bits(64 bits), c.numWords)
 
   val wordAddr = io.req.addr >> 3
   memBody.write(
     address = wordAddr.resized,
-    data = io.req.data,
+    data = io.req.precomputedStrbValid.mux(
+      (
+        False,
+        (io.req.data << (reqControl.misalignment << 3))
+          .resize(io.req.data.getBitsWidth)
+      ),
+      (True, io.req.data)
+    ),
     enable = io.req.valid && io.req.write,
     mask = io.req.precomputedStrbValid.mux(
-      (False, computeMask(io.req.addr, io.req.width)),
+      (False, reqControl.mask),
       (True, io.req.precomputedStrb)
     )
   )
@@ -161,12 +181,46 @@ case class DataMemV2Core(c: DataMemConfig) extends Component {
   val readRsp = memBody.streamReadSync(
     ioReqToRead.translateWith(wordAddr.resize(log2Up(c.numWords)))
   )
+  val stagedReqControl = ReqControl.compute(stagedReq.payload)
 
   val rspData = new DataMemResponse()
-  rspData.data := readRsp.payload
+  rspData.data := stagedReq.precomputedStrbValid.mux(
+    (
+      False,
+      (readRsp.payload >> (stagedReqControl.misalignment << 3)).resize(
+        readRsp.payload.getBitsWidth
+      ) & stagedReqControl.expandedAlignedMask
+    ),
+    (True, readRsp.payload)
+  )
   rspData.ctx := stagedReq.ctx
 
   StreamJoin(stagedReq, readRsp).translateWith(rspData) >> io.rsp
+  /*
+  when(io.rsp.fire) {
+    report(
+      Seq(
+        "Memory operation completed. addr=",
+        stagedReq.payload.addr,
+        " write=",
+        stagedReq.payload.write,
+        " writeData=",
+        stagedReq.payload.data,
+        " precomputedStrbValid=",
+        stagedReq.payload.precomputedStrbValid,
+        " precomputedStrb=",
+        stagedReq.payload.precomputedStrb,
+        " width=",
+        stagedReq.payload.width,
+        " readData=",
+        rspData.data,
+        " mask=",
+        stagedReqControl.mask,
+        " eam=",
+        stagedReqControl.expandedAlignedMask
+      )
+    )
+  }*/
 }
 
 case class DataMemV2(c: DataMemConfig) extends Area {
