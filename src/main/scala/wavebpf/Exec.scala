@@ -45,7 +45,6 @@ case class AluStageInsnContext(
   val exc = new CpuExceptionSkeleton()
   val memory = new MemoryAccessReq(c)
   val br = BranchReq()
-  val operand2IsReg = Bool()
 }
 
 case class MemoryAccessReq(
@@ -245,8 +244,8 @@ case class ExecMemoryStage(
     maskedAluOutput
   )
 
-  val operand2 = Mux[Bits](
-    sel = maskedAluOutput.operand2IsReg,
+  val storeData = Mux[Bits](
+    sel = maskedAluOutput.insnFetch.insn(0),
     whenTrue = maskedAluOutput.regFetch.rs2.data,
     whenFalse = maskedAluOutput.insnFetch.imm.asBits
   )
@@ -255,7 +254,7 @@ case class ExecMemoryStage(
   memReq.addr := maskedAluOutput.memory.addr
   memReq.write := maskedAluOutput.memory.store
   memReq.ctx.assignDontCare()
-  memReq.data := operand2
+  memReq.data := storeData
   memReq.width := maskedAluOutput.memory.width
   memReq.precomputedStrbValid := False
   memReq.precomputedStrb.assignDontCare()
@@ -549,7 +548,6 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   ctxOut.exc := exc
   ctxOut.memory := memory
   ctxOut.br := br
-  ctxOut.operand2IsReg := operand2IsReg
 
   val outStream = StreamJoin
     .arg(io.regFetch, io.insnFetch)
