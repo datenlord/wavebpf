@@ -14,7 +14,7 @@ class SimChacha20Spec extends AnyFunSuite {
     import SimUtil._
     val config = DefaultWbpfConfig()
     SimConfig.withWave.doSim(
-      new CustomWbpf(config.copy(pe = config.pe.copy(reportCommit = true)))
+      new CustomWbpf(config.copy(pe = config.pe.copy(reportCommit = false)))
     ) { dut =>
       initDutForTesting(dut)
       val firstExc = dut.io.excOutput.head
@@ -62,6 +62,14 @@ class SimChacha20Spec extends AnyFunSuite {
       assert(firstExc.code.toEnum == CpuExceptionCode.EXIT)
 
       println("Cycles: " + cycleCount)
+      val chacha20 = new wavebpf.testutil.ChaCha20(key, nonce, 0)
+      val expected = new Array[Byte](data.length)
+      chacha20.encrypt(expected, data, data.length)
+      val actual = (0 until data.length).map(i =>
+        dmReadOnce(dut, 0x100 + i, MemoryAccessWidth.W1).toByte
+      )
+      assert(expected.toSeq == actual)
+      println("Validation OK")
     }
   }
 }
