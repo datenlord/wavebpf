@@ -377,6 +377,36 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   val likeAlu32 = !opcode(0) & !opcode(1)
 
+  case class LddwHigherHalfState() extends Bundle {
+    val valid = Bool()
+    val regindex = UInt(log2Up(c.regFetch.numRegs) bits)
+    val lower = Bits(32 bits)
+  }
+  val lddwHigherHalfInit = LddwHigherHalfState()
+  lddwHigherHalfInit.assignDontCare()
+  lddwHigherHalfInit.valid := False
+
+  val lddwHigherHalfNext = LddwHigherHalfState()
+  lddwHigherHalfNext.assignDontCare()
+  lddwHigherHalfNext.valid := False
+
+  val lddwHigherHalfReg =
+    RegNextWhen(
+      next = lddwHigherHalfNext,
+      cond = io.output.fire,
+      init = lddwHigherHalfInit
+    )
+
+  val lddwHigherHalf = LddwHigherHalfState()
+  lddwHigherHalf.valid := lddwHigherHalfReg.valid & !io.insnFetch.payload.ctx.flush
+  lddwHigherHalf.assignUnassignedByName(lddwHigherHalfReg)
+
+  def reportBadInsn() {
+    exc.valid := True
+    exc.code := CpuExceptionCode.BAD_INSTRUCTION
+    exc.data := io.insnFetch.payload.insn.asUInt
+  }
+
   switch(opcode) {
     is(M"0000-111", M"0000-100") { // 0x07/0x0f, dst += imm
       isAlu := True
@@ -397,15 +427,11 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       regWritebackData.data := (rs1 * operand2)(63 downto 0).asBits
        */
       // multiplication not implemented
-      exc.valid := True
-      exc.code := CpuExceptionCode.BAD_INSTRUCTION
-      exc.data := io.insnFetch.payload.insn.asUInt
+      reportBadInsn()
     }
     is(M"0011-111", M"0011-100") { // 0x37/0x3f, dst /= imm
       // division not implemented
-      exc.valid := True
-      exc.code := CpuExceptionCode.BAD_INSTRUCTION
-      exc.data := io.insnFetch.payload.insn.asUInt
+      reportBadInsn()
     }
     is(M"0100-111", M"0100-100") { // 0x47/0x4f, dst |= imm
       isAlu := True
@@ -439,9 +465,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     }
     is(M"1001-111", M"1001-100") { // 0x97/0x9f, dst %= imm
       // division not implemented
-      exc.valid := True
-      exc.code := CpuExceptionCode.BAD_INSTRUCTION
-      exc.data := io.insnFetch.payload.insn.asUInt
+      reportBadInsn()
     }
     is(M"1010-111", M"1010-100") { // 0xa7/0xaf, dst ^= imm
       isAlu := True
@@ -464,9 +488,9 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       ).asBits
     }
     is(0x18) { // dst = imm
-      regWritebackValid := True
-      regWritebackData.index := rdIndex
-      regWritebackData.data := imm.asBits
+      lddwHigherHalfNext.valid := True
+      lddwHigherHalfNext.regindex := rdIndex
+      lddwHigherHalfNext.lower := imm(31 downto 0).asBits
     }
     is(0x61, 0x62, 0x63) {
       memory.valid := True
@@ -553,10 +577,18 @@ case class ExecAluStage(c: ExecConfig) extends Component {
         }
       }
     }
+    is(0x00) {
+      // lddw higher half
+      when(lddwHigherHalf.valid) {
+        regWritebackValid := True
+        regWritebackData.index := lddwHigherHalf.regindex
+        regWritebackData.data := imm(31 downto 0) ## lddwHigherHalf.lower
+      } otherwise {
+        reportBadInsn()
+      }
+    }
     default {
-      exc.valid := True
-      exc.code := CpuExceptionCode.BAD_INSTRUCTION
-      exc.data := io.insnFetch.payload.insn.asUInt
+      reportBadInsn()
     }
   }
 

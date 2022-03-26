@@ -3,7 +3,7 @@ long sumLoop() {
   long end = * (long *) 0x18;
   volatile long *out = * (volatile long **) 0x20;
 
-  *out = 0;
+  *out = 0x434200004100;
   for(long i = start; i < end; i++) {
     *out += i;
   }
