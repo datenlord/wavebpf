@@ -49,7 +49,7 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
       val axiMaster = Axi4WriteOnly(DataMemV2Axi4PortConfig())
       val axi = WbpfUtil.axi4Pipe(axiMaster)
       axi.setBlocked()
-      val awSnapshot = Reg(Axi4Aw(MMIOBusConfigV2()))
+      val awSnapshot = Reg(Axi4Aw(DataMemV2Axi4PortConfig()))
 
       request.setIdle()
       response.freeRun()

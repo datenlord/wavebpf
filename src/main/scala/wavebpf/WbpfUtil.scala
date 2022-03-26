@@ -3,6 +3,7 @@ package wavebpf
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.amba4.axi._
+import spinal.lib.bus.amba4.axilite._
 
 object WbpfUtil {
   def decodeAxSize(axSize: UInt): UInt = {
@@ -22,6 +23,18 @@ object WbpfUtil {
 
   def axi4Pipe(x: Axi4): Axi4 = {
     val sink = Axi4(x.config)
+
+    sink.ar << x.ar.s2mPipe()
+    sink.aw << x.aw.s2mPipe()
+    sink.w << x.w.s2mPipe()
+    sink.r.m2sPipe() >> x.r
+    sink.b.m2sPipe() >> x.b
+
+    sink
+  }
+
+  def axilite4Pipe(x: AxiLite4): AxiLite4 = {
+    val sink = AxiLite4(x.config)
 
     sink.ar << x.ar.s2mPipe()
     sink.aw << x.aw.s2mPipe()

@@ -112,7 +112,6 @@ object SimUtil {
 
     dut.io.mmio.w.valid #= true
     dut.io.mmio.w.payload.data #= value
-    dut.io.mmio.w.payload.last #= true
     dut.clockDomain.waitSamplingWhere(dut.io.mmio.w.ready.toBoolean)
     dut.io.mmio.w.valid #= false
 
@@ -130,7 +129,6 @@ object SimUtil {
     dut.io.mmio.ar.valid #= false
 
     dut.clockDomain.waitSamplingWhere(dut.io.mmio.r.valid.toBoolean)
-    assert(dut.io.mmio.r.last.toBoolean)
     val ret = dut.io.mmio.r.payload.data.toBigInt
     dut.io.mmio.r.ready #= true
     dut.clockDomain.waitSampling()

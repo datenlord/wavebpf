@@ -4,6 +4,8 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.amba4.axi._
 import spinal.lib.bus.misc.SizeMapping
+import spinal.lib.bus.amba4.axilite._
+import wavebpf.util._
 
 case class WbpfConfig(
     pe: PeConfig,
@@ -18,7 +20,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     )
   )
   val io = new Bundle {
-    val mmio = slave(Axi4(MMIOBusConfigV2()))
+    val mmio = slave(AxiLite4(MMIOBusConfigV2()))
     val excOutput = out(
       Vec(for (i <- 0 until config.numPe) yield new CpuException())
     )
@@ -35,22 +37,33 @@ class CustomWbpf(config: WbpfConfig) extends Component {
   val addrMappings = peList.zipWithIndex.map(x =>
     SizeMapping(base = 0x1000 + x._2 * 0x1000, size = 0x1000)
   )
-  val mmioWriteDecoder = Axi4WriteOnlyDecoder(
+  val mmioWriteDecoder = AxiLite4WriteOnlyDecoder(
     MMIOBusConfigV2(),
     addrMappings
   )
-  mmioWriteDecoder.io.input << io.mmio
+  mmioWriteDecoder.io.input.aw << io.mmio.aw
+  mmioWriteDecoder.io.input.w << io.mmio.w
+  mmioWriteDecoder.io.input.b >> io.mmio.b
   mmioWriteDecoder.io.outputs
     .zip(peList)
-    .foreach(x => x._2.io.mmio << x._1)
-  val mmioReadDecoder = Axi4ReadOnlyDecoder(
+    .foreach(x => {
+      x._2.io.mmio.aw << x._1.aw
+      x._2.io.mmio.w << x._1.w
+      x._2.io.mmio.b >> x._1.b
+    })
+  val mmioReadDecoder = AxiLite4ReadOnlyDecoder(
     MMIOBusConfigV2(),
     addrMappings
   )
-  mmioReadDecoder.io.input << io.mmio
+  mmioReadDecoder.io.input.ar << io.mmio.ar
+  mmioReadDecoder.io.input.r >> io.mmio.r
+
   mmioReadDecoder.io.outputs
     .zip(peList)
-    .foreach(x => x._2.io.mmio << x._1)
+    .foreach(x => {
+      x._2.io.mmio.ar << x._1.ar
+      x._2.io.mmio.r >> x._1.r
+    })
 
   io.excOutput.zip(peList).foreach(x => x._1 := x._2.io.excOutput)
 
@@ -82,7 +95,7 @@ class Wbpf extends CustomWbpf(DefaultWbpfConfig()) {}
 
 class WbpfSynth extends Component {
   val io = new Bundle {
-    val mmio = slave(Axi4(MMIOBusConfigV2()))
+    val mmio = slave(AxiLite4(MMIOBusConfigV2()))
     val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
   }
   val wbpf = new Wbpf()

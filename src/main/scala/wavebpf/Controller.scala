@@ -4,12 +4,13 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.fsm._
 import spinal.lib.bus.amba4.axi._
+import spinal.lib.bus.amba4.axilite._
 
 case class Controller(
     insnBufferConfig: InsnBufferConfig
 ) extends Component {
   val io = new Bundle {
-    val mmio = slave(Axi4(MMIOBusConfigV2()))
+    val mmio = slave(AxiLite4(MMIOBusConfigV2()))
     val refill = master Flow (InsnBufferRefillReq(insnBufferConfig))
     val pcUpdater = master Flow (PcUpdateReq())
     val excReport = in(new CpuException())
@@ -22,13 +23,15 @@ case class Controller(
 
   io.refill.setIdle()
 
-  val mmio = WbpfUtil.axi4Pipe(io.mmio)
-  mmio.setBlocked()
+  val mmio = WbpfUtil.axilite4Pipe(io.mmio)
+  mmio.ar.setBlocked()
+  mmio.aw.setBlocked()
+  mmio.w.setBlocked()
+  mmio.r.setIdle()
+  mmio.b.setIdle()
 
-  val awSnapshot = Reg(Axi4Aw(MMIOBusConfigV2()))
+  val awSnapshot = Reg(AxiLite4Ax(MMIOBusConfigV2()))
   val writeAddr = awSnapshot.addr(11 downto 3)
-
-  mmio.b.payload.id := awSnapshot.id
 
   val writeFsm = new StateMachine {
     val waitForAw: State = new State with EntryPoint {
@@ -44,34 +47,32 @@ case class Controller(
       whenIsActive {
         when(mmio.w.valid) {
           mmio.w.ready := True
-          when(mmio.w.last) {
-            switch(writeAddr) {
-              is(0x00) {
-                val value = mmio.w.payload
-                  .data(insnBufferConfig.addrWidth - 1 downto 0)
-                  .asUInt
-                refillCounter := value
-              }
-              is(0x01) {
-                refillBuffer := mmio.w.payload.data
-              }
-              is(0x02) {
-                val data = mmio.w.payload.data ## refillBuffer
-                io.refill.valid := True
-                io.refill.payload.addr := refillCounter
-                io.refill.payload.insn := data
-                refillCounter := refillCounter + 1
-              }
-              is(0x03) {
-                io.pcUpdater.valid := True
-                io.pcUpdater.payload.pc := mmio.w.payload.data.asUInt.resized
-                io.pcUpdater.payload.flush := True
-                io.pcUpdater.payload.flushReason := PcFlushReasonCode.EXTERNAL
-                //report(Seq("Update PC: ", mmio.w.payload.data.asUInt))
-              }
+          switch(writeAddr) {
+            is(0x00) {
+              val value = mmio.w.payload
+                .data(insnBufferConfig.addrWidth - 1 downto 0)
+                .asUInt
+              refillCounter := value
             }
-            goto(sendWriteRsp)
+            is(0x01) {
+              refillBuffer := mmio.w.payload.data
+            }
+            is(0x02) {
+              val data = mmio.w.payload.data ## refillBuffer
+              io.refill.valid := True
+              io.refill.payload.addr := refillCounter
+              io.refill.payload.insn := data
+              refillCounter := refillCounter + 1
+            }
+            is(0x03) {
+              io.pcUpdater.valid := True
+              io.pcUpdater.payload.pc := mmio.w.payload.data.asUInt.resized
+              io.pcUpdater.payload.flush := True
+              io.pcUpdater.payload.flushReason := PcFlushReasonCode.EXTERNAL
+              // report(Seq("Update PC: ", mmio.w.payload.data.asUInt))
+            }
           }
+          goto(sendWriteRsp)
         }
       }
     }
@@ -79,7 +80,6 @@ case class Controller(
       whenIsActive {
         mmio.b.valid := True
         mmio.b.payload.resp := 0 // OKAY
-        mmio.b.payload.id := awSnapshot.id
         when(mmio.b.ready) {
           goto(waitForAw)
         }
@@ -87,7 +87,7 @@ case class Controller(
     }
   }
 
-  val arSnapshot = Reg(Axi4Ar(MMIOBusConfigV2()))
+  val arSnapshot = Reg(AxiLite4Ax(MMIOBusConfigV2()))
   val readAddr = arSnapshot.addr(11 downto 3)
   val readHigherHalf = arSnapshot.addr(2)
 
@@ -105,8 +105,6 @@ case class Controller(
       whenIsActive {
         mmio.r.valid := True
         mmio.r.payload.resp := 0 // OKAY
-        mmio.r.payload.id := arSnapshot.id
-        mmio.r.payload.last := True
 
         switch(readAddr) {
           is(0x00) {
@@ -152,9 +150,8 @@ case class Controller(
 }
 
 object MMIOBusConfigV2 {
-  def apply() = Axi4Config(
+  def apply() = AxiLite4Config(
     addressWidth = 32,
-    dataWidth = 32,
-    idWidth = 16
+    dataWidth = 32
   )
 }

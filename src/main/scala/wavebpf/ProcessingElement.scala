@@ -3,6 +3,7 @@ package wavebpf
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.amba4.axi._
+import spinal.lib.bus.amba4.axilite._
 
 case class PeConfig(
     insnBuffer: InsnBufferConfig,
@@ -15,7 +16,7 @@ case class ProcessingElement(config: PeConfig, coreIndex: Int) extends Component
   val pcmgr = new PcManager(c = config.insnBuffer, coreIndex = coreIndex)
   var pcUpdater = new PcUpdater(pcmgr)
   val io = new Bundle {
-    val mmio = slave(Axi4(MMIOBusConfigV2()))
+    val mmio = slave(AxiLite4(MMIOBusConfigV2()))
     val excOutput = out(new CpuException())
     val dm = master(DataMemV2Port())
   }
