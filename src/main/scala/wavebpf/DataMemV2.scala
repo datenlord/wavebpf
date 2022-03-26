@@ -54,6 +54,13 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
       request.setIdle()
       response.freeRun()
 
+      val reqCounter = Reg(UInt(8 bits))
+      val ackCounter = Reg(UInt(8 bits))
+
+      when(response.fire) {
+        ackCounter := ackCounter + 1
+      }
+
       val writeFsm = new StateMachine {
         val waitForAw: State = new State with EntryPoint {
           whenIsActive {
@@ -65,6 +72,10 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
           }
         }
         val waitForW: State = new State {
+          onEntry {
+            reqCounter := 0
+            ackCounter := 0
+          }
           whenIsActive {
             request.valid := axi.w.valid
             request.payload.precomputedStrbValid := True
@@ -84,6 +95,7 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
               awSnapshot.addr := awSnapshot.addr + WbpfUtil.decodeAxSize(
                 awSnapshot.size
               )
+              reqCounter := reqCounter + 1
               when(axi.w.last) {
                 goto(sendWriteRsp)
               }
@@ -92,11 +104,13 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
         }
         val sendWriteRsp: State = new State {
           whenIsActive {
-            axi.b.valid := True
-            axi.b.payload.resp := 0 // OKAY
-            axi.b.payload.id := awSnapshot.id
-            when(axi.b.ready) {
-              goto(waitForAw)
+            when(reqCounter === ackCounter) {
+              axi.b.valid := True
+              axi.b.payload.resp := 0 // OKAY
+              axi.b.payload.id := awSnapshot.id
+              when(axi.b.ready) {
+                goto(waitForAw)
+              }
             }
           }
         }
@@ -237,6 +251,7 @@ case class DataMemV2(c: DataMemConfig) extends Area {
   }
 
   Component.current.afterElaboration {
+    println("DM has " + users.length + " users")
     DataMemV2Port.arbitrate(users, dmPort)
   }
 }
