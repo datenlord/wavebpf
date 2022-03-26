@@ -9,7 +9,7 @@ import spinal.lib.fsm._
 
 case class DataMemRequest() extends Bundle {
   val write = Bool()
-  val addr = UInt(64 bits)
+  val addr = UInt(32 bits)
   val data = Bits(64 bits)
   val ctx = UInt(4 bits)
   val width = MemoryAccessWidth()
@@ -49,10 +49,7 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
         // Signal that we do not want the DM unit to shift the data for us
         request.payload.precomputedStrbValid := True
 
-        request.payload.addr := (U(
-          0,
-          32 bits
-        ).asBits ## arSnapshot.addr.asBits).asUInt
+        request.payload.addr := arSnapshot.addr
         request.payload.write := False
         request.payload.width := WbpfUtil.axSizeToMemAccessWidth64bit(
           arSnapshot.size
@@ -158,10 +155,7 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
             request.payload.precomputedStrbValid := True
             request.payload.precomputedStrb := axi.w.strb
             request.payload.ctx.assignDontCare()
-            request.payload.addr := (U(
-              0,
-              32 bits
-            ).asBits ## awSnapshot.addr.asBits).asUInt
+            request.payload.addr := awSnapshot.addr
             request.payload.write := True
             request.payload.width.assignDontCare()
             request.payload.data := axi.w.payload.data

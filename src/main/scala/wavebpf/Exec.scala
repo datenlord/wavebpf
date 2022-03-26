@@ -52,7 +52,7 @@ case class MemoryAccessReq(
 ) extends Bundle {
   val valid = Bool()
   val store = Bool()
-  val addr = UInt(64 bits)
+  val addr = UInt(32 bits)
   val rd = UInt(log2Up(c.regFetch.numRegs) bits)
   val width = MemoryAccessWidth()
 }
@@ -328,7 +328,8 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   val imm = io.insnFetch.payload.imm
   val rs1 = io.regFetch.payload.rs1.data.asUInt
   val rs2 = io.regFetch.payload.rs2.data.asUInt
-  val offset = io.insnFetch.payload.insn(31 downto 16).asSInt.resize(64).asUInt
+  val offset32 =
+    io.insnFetch.payload.insn(31 downto 16).asSInt.resize(32).asUInt
 
   val operand2IsReg = opcode(3)
   val operand2 = Mux(sel = operand2IsReg, whenTrue = rs2, whenFalse = imm)
@@ -352,13 +353,13 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   val isStore = opcode(1)
   memory.store := isStore
   memory.addr := isStore.mux(
-    (False, rs2),
-    (True, rs1)
-  ) + offset
+    (False, rs2.resize(32 bits)),
+    (True, rs1.resize(32 bits))
+  ) + offset32
 
   val br = BranchReq()
   br.valid := False
-  br.addr := io.insnFetch.payload.addr.resize(29 bits) + 1 + offset.resize(
+  br.addr := io.insnFetch.payload.addr.resize(29 bits) + 1 + offset32.resize(
     29 bits
   )
 
