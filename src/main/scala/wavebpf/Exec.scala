@@ -372,19 +372,25 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   val condSle = condSlt || condEq
   val condSgt = !condSle
   val condSge = !condSlt
+  val isAlu = Bool()
+  isAlu := False
+
+  val likeAlu32 = !opcode(0) & !opcode(1)
 
   switch(opcode) {
-    is(M"0000-111") { // 0x07/0x0f, dst += imm
+    is(M"0000-111", M"0000-100") { // 0x07/0x0f, dst += imm
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 + operand2).asBits
     }
-    is(M"0001-111") { // 0x17/0x1f, dst -= imm
+    is(M"0001-111", M"0001-100") { // 0x17/0x1f, dst -= imm
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 - operand2).asBits
     }
-    is(M"0010-111") { // 0x27/0x2f, dst *= imm
+    is(M"0010-111", M"0010-100") { // 0x27/0x2f, dst *= imm
       /*
       regWritebackValid := True
       regWritebackData.index := rdIndex
@@ -395,54 +401,62 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       exc.code := CpuExceptionCode.BAD_INSTRUCTION
       exc.data := io.insnFetch.payload.insn.asUInt
     }
-    is(M"0011-111") { // 0x37/0x3f, dst /= imm
+    is(M"0011-111", M"0011-100") { // 0x37/0x3f, dst /= imm
       // division not implemented
       exc.valid := True
       exc.code := CpuExceptionCode.BAD_INSTRUCTION
       exc.data := io.insnFetch.payload.insn.asUInt
     }
-    is(M"0100-111") { // 0x47/0x4f, dst |= imm
+    is(M"0100-111", M"0100-100") { // 0x47/0x4f, dst |= imm
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 | operand2).asBits
     }
-    is(M"0101-111") { // 0x57/0x5f, dst &= imm
+    is(M"0101-111", M"0101-100") { // 0x57/0x5f, dst &= imm
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 & operand2).asBits
     }
-    is(M"0110-111") { // 0x67/0x6f, dst <<= imm
+    is(M"0110-111", M"0110-100") { // 0x67/0x6f, dst <<= imm
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 << operand2(5 downto 0))(63 downto 0).asBits
     }
-    is(M"0111-111") { // 0x77/0x7f, dst >>= imm (logical)
+    is(M"0111-111", M"0111-100") { // 0x77/0x7f, dst >>= imm (logical)
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 >> operand2(5 downto 0))(63 downto 0).asBits
     }
-    is(M"10000111") { // 0x87, dst = -dst
+    is(M"10000111", M"10000100") { // 0x87, dst = -dst
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (-rs1.asSInt).asBits
     }
-    is(M"1001-111") { // 0x97/0x9f, dst %= imm
+    is(M"1001-111", M"1001-100") { // 0x97/0x9f, dst %= imm
       // division not implemented
       exc.valid := True
       exc.code := CpuExceptionCode.BAD_INSTRUCTION
       exc.data := io.insnFetch.payload.insn.asUInt
     }
-    is(M"1010-111") { // 0xa7/0xaf, dst ^= imm
+    is(M"1010-111", M"1010-100") { // 0xa7/0xaf, dst ^= imm
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 ^ operand2).asBits
     }
-    is(M"1011-111") { // 0xb7/0xbf, dst = imm
+    is(M"1011-111", M"1011-100") { // 0xb7/0xbf, dst = imm
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := operand2.asBits
     }
-    is(M"1100-111") { // 0xc7/0xcf, dst >>= imm (arithmetic)
+    is(M"1100-111", M"1100-100") { // 0xc7/0xcf, dst >>= imm (arithmetic)
+      isAlu := True
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1.asSInt >> operand2(5 downto 0))(
@@ -546,11 +560,19 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     }
   }
 
+  val regWritebackOverride = RegContext(c.regFetch, Bits(64 bits))
+  regWritebackOverride.index := regWritebackData.index
+  regWritebackOverride.data := Mux(
+    sel = isAlu & likeAlu32,
+    whenTrue = regWritebackData.data(31 downto 0).resize(64 bits),
+    whenFalse = regWritebackData.data
+  )
+
   val ctxOut = AluStageInsnContext(c)
   ctxOut.regFetch := io.regFetch
   ctxOut.insnFetch := io.insnFetch
   ctxOut.regWritebackValid := regWritebackValid
-  ctxOut.regWriteback := regWritebackData
+  ctxOut.regWriteback := regWritebackOverride
   ctxOut.exc := exc
   ctxOut.memory := memory
   ctxOut.br := br
