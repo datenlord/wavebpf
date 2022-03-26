@@ -45,6 +45,16 @@ object WbpfUtil {
     sink
   }
 
+  def truncateAxiLite4Address(
+      x: AxiLite4Ax,
+      range: Range.Inclusive
+  ): AxiLite4Ax = {
+    val ret = AxiLite4Ax(x.config)
+    ret.addr := x.addr(range).resized
+    ret.assignUnassignedByName(x)
+    ret
+  }
+
   def axi4Pipe(x: Axi4WriteOnly): Axi4WriteOnly = {
     val sink = Axi4WriteOnly(x.config)
 

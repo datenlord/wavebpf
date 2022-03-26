@@ -41,7 +41,9 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     MMIOBusConfigV2(),
     addrMappings
   )
-  mmioWriteDecoder.io.input.aw << io.mmio.aw
+  mmioWriteDecoder.io.input.aw << io.mmio.aw.translateWith(
+    WbpfUtil.truncateAxiLite4Address(io.mmio.aw.payload, 15 downto 0)
+  )
   mmioWriteDecoder.io.input.w << io.mmio.w
   mmioWriteDecoder.io.input.b >> io.mmio.b
   mmioWriteDecoder.io.outputs
@@ -55,7 +57,9 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     MMIOBusConfigV2(),
     addrMappings
   )
-  mmioReadDecoder.io.input.ar << io.mmio.ar
+  mmioReadDecoder.io.input.ar << io.mmio.ar.translateWith(
+    WbpfUtil.truncateAxiLite4Address(io.mmio.ar.payload, 15 downto 0)
+  )
   mmioReadDecoder.io.input.r >> io.mmio.r
 
   mmioReadDecoder.io.outputs
