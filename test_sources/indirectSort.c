@@ -2,14 +2,15 @@ static long (*getCoreIndex)() = (void *)1;
 
 void indirectSort()
 {
-  long coreOffset = getCoreIndex() << 3;
-  long stackAddr = 0x2000 - coreOffset * 0x100;
+  long coreIndex = getCoreIndex();
+  long stackAddr = 0x2000 - coreIndex * 0x100;
   asm volatile("r10 = %0"
                :
                : "r"(stackAddr));
 
   long len = *(long *)0x08;
 
+  long coreOffset = coreIndex << 3;
   long *indices = *(long **)(0x10 + (coreOffset << 1));
   long *values = *(long **)(0x18 + (coreOffset << 1));
 

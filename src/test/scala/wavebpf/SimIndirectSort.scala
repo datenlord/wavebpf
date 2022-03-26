@@ -15,7 +15,7 @@ class SimIndirectSortSpec extends AnyFunSuite {
     val program =
       Array[Short](
         0x85, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xbf, 0x01, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x67, 0x01, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x67, 0x01, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
         0xb7, 0x02, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x1f, 0x12, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0xbf, 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0xb7, 0x01, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x79, 0x11, 0x00, 0x00,
@@ -95,7 +95,9 @@ class SimIndirectSortSpec extends AnyFunSuite {
         mmioWrite(dut, 0x18 + 0x1000 * (ci + 1), 0x00)
       }
 
-      dut.clockDomain.waitSamplingWhere(!coreIndices.exists(i => dut.io.excOutput(i).valid.toBoolean))
+      dut.clockDomain.waitSamplingWhere(
+        !coreIndices.exists(i => dut.io.excOutput(i).valid.toBoolean)
+      )
 
       var cycleCount = 0
       while (coreIndices.exists(i => !dut.io.excOutput(i).valid.toBoolean)) {
@@ -144,14 +146,16 @@ class SimIndirectSortSpec extends AnyFunSuite {
 
       val firstExc = dut.io.excOutput.head
 
-      loadCode(dut, 0, 0x0, program)
-      loadCode(dut, 1, 0x0, program)
+      for (i <- 0 until 4) {
+        loadCode(dut, i, 0x0, program)
+      }
       println("Code loaded.")
 
       runOnce(dut, Seq(0), Seq(Seq(0, 1, 2, 3)), Seq(42, 1, 3, 9))
       runOnceRandom(dut, Seq(0), 50)
       runOnceRandom(dut, Seq(1), 50)
       runOnceRandom(dut, Seq(0, 1), 50)
+      runOnceRandom(dut, Seq(0, 1, 2, 3), 50)
     }
   }
 }
