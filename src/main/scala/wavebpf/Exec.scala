@@ -385,9 +385,15 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       regWritebackData.data := (rs1 - operand2).asBits
     }
     is(M"0010-111") { // 0x27/0x2f, dst *= imm
+      /*
       regWritebackValid := True
       regWritebackData.index := rdIndex
       regWritebackData.data := (rs1 * operand2)(63 downto 0).asBits
+       */
+      // multiplication not implemented
+      exc.valid := True
+      exc.code := CpuExceptionCode.BAD_INSTRUCTION
+      exc.data := io.insnFetch.payload.insn.asUInt
     }
     is(M"0011-111") { // 0x37/0x3f, dst /= imm
       // division not implemented
