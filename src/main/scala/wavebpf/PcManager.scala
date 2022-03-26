@@ -11,7 +11,7 @@ case class PcUpdateReq() extends Bundle {
 }
 
 object PcFlushReasonCode extends SpinalEnum(binarySequential) {
-  val BRANCH_RESOLVE, EXTERNAL = newElement()
+  val BRANCH_RESOLVE, EXTERNAL, STOP = newElement()
 }
 
 class PcManager(c: InsnBufferConfig, coreIndex: Int) extends Component {

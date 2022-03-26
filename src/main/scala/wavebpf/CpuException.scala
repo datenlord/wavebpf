@@ -5,7 +5,7 @@ import spinal.lib._
 
 object CpuExceptionCode extends SpinalEnum {
   val INVALID, NOT_INIT, PENDING_BRANCH, BAD_INSTRUCTION, BAD_MEMORY_ACCESS,
-      EXIT, CALL = newElement()
+      EXIT, CALL, STOP = newElement()
   defaultEncoding = SpinalEnumEncoding("staticEncoding")(
     INVALID -> 0,
     NOT_INIT -> 1,
@@ -13,7 +13,8 @@ object CpuExceptionCode extends SpinalEnum {
     BAD_INSTRUCTION -> 3,
     BAD_MEMORY_ACCESS -> 4,
     EXIT -> 5,
-    CALL -> 6
+    CALL -> 6,
+    STOP -> 7
   )
 }
 

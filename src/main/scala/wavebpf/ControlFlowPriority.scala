@@ -7,7 +7,7 @@ object ControlFlowPriority {
   private val width = 3 bits
   def forFlushReason(that: SpinalEnumCraft[PcFlushReasonCode.type]): UInt = {
     val ret = UInt(width)
-    when(that === PcFlushReasonCode.EXTERNAL) {
+    when(that === PcFlushReasonCode.EXTERNAL || that === PcFlushReasonCode.STOP) {
       ret := 0
     } elsewhen (that === PcFlushReasonCode.BRANCH_RESOLVE) {
       ret := 1

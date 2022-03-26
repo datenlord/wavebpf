@@ -63,6 +63,13 @@ class SimMemAddSpec extends AnyFunSuite {
       assert(mmioRead(dut, 0x1018) == 0x38) // pc
       assert(mmioRead(dut, 0x1020) == 5) // code
 
+      // Test STOP command
+      mmioWrite(dut, 0x1004, 0x00)
+      while (mmioRead(dut, 0x1020) != 7) {
+        println("Wait for stop...")
+        dut.clockDomain.waitSampling()
+      }
+
       println("Code execution completed.")
       for (i <- 0 to 2) {
         println("*** CLOCK CYCLE ***")

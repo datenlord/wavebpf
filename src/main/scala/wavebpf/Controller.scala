@@ -31,7 +31,7 @@ case class Controller(
   mmio.b.setIdle()
 
   val awSnapshot = Reg(AxiLite4Ax(MMIOBusConfigV2()))
-  val writeAddr = awSnapshot.addr(11 downto 3)
+  val writeAddr = awSnapshot.addr(11 downto 2)
 
   val writeFsm = new StateMachine {
     val waitForAw: State = new State with EntryPoint {
@@ -55,16 +55,22 @@ case class Controller(
               refillCounter := value
             }
             is(0x01) {
-              refillBuffer := mmio.w.payload.data
+              io.pcUpdater.valid := True
+              io.pcUpdater.payload.pc := 0
+              io.pcUpdater.payload.flush := True
+              io.pcUpdater.payload.flushReason := PcFlushReasonCode.STOP
             }
             is(0x02) {
+              refillBuffer := mmio.w.payload.data
+            }
+            is(0x04) {
               val data = mmio.w.payload.data ## refillBuffer
               io.refill.valid := True
               io.refill.payload.addr := refillCounter
               io.refill.payload.insn := data
               refillCounter := refillCounter + 1
             }
-            is(0x03) {
+            is(0x06) {
               io.pcUpdater.valid := True
               io.pcUpdater.payload.pc := mmio.w.payload.data.asUInt.resized
               io.pcUpdater.payload.flush := True
@@ -88,8 +94,7 @@ case class Controller(
   }
 
   val arSnapshot = Reg(AxiLite4Ax(MMIOBusConfigV2()))
-  val readAddr = arSnapshot.addr(11 downto 3)
-  val readHigherHalf = arSnapshot.addr(2)
+  val readAddr = arSnapshot.addr(11 downto 2)
 
   val readFsm = new StateMachine {
     val waitForAr: State = new State with EntryPoint {
@@ -110,28 +115,37 @@ case class Controller(
           is(0x00) {
             mmio.r.payload.data := refillCounter.asBits.resized
           }
-          is(0x03) {
+          is(0x06) {
             val pc = io.excReport.pc.asBits << 3
-            val data = readHigherHalf.mux(
-              (False, pc(31 downto 0)),
-              (True, pc(63 downto 32))
-            )
+            val data = pc(31 downto 0)
             mmio.r.payload.data := io.excReport.valid.mux(
               (False, U(0, 32 bits).asBits),
               (True, data)
             )
           }
-          is(0x04) {
+          is(0x07) {
+            val pc = io.excReport.pc.asBits << 3
+            val data = pc(63 downto 32)
+            mmio.r.payload.data := io.excReport.valid.mux(
+              (False, U(0, 32 bits).asBits),
+              (True, data)
+            )
+          }
+          is(0x08) {
             mmio.r.payload.data := io.excReport.valid.mux(
               (False, U(0, 32 bits).asBits),
               (True, io.excReport.code.asBits.resize(32 bits))
             )
           }
-          is(0x05) {
-            val data = readHigherHalf.mux(
-              (False, io.excReport.data(31 downto 0)),
-              (True, io.excReport.data(63 downto 32))
+          is(0x0a) {
+            val data = io.excReport.data(31 downto 0)
+            mmio.r.payload.data := io.excReport.valid.mux(
+              (False, U(0, 32 bits).asBits),
+              (True, data.asBits)
             )
+          }
+          is(0x0b) {
+            val data = io.excReport.data(63 downto 32)
             mmio.r.payload.data := io.excReport.valid.mux(
               (False, U(0, 32 bits).asBits),
               (True, data.asBits)

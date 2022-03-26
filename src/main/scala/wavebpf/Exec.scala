@@ -609,6 +609,16 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   ctxOut.memory := memory
   ctxOut.br := br
 
+  when(
+    io.insnFetch.payload.ctx.flush && io.insnFetch.payload.ctx.flushReason === PcFlushReasonCode.STOP
+  ) {
+    val stopExc = new CpuExceptionSkeleton()
+    stopExc.valid := True
+    stopExc.code := CpuExceptionCode.STOP
+    stopExc.data := 0
+    ctxOut.exc := stopExc
+  }
+
   val outStream = StreamJoin
     .arg(io.regFetch, io.insnFetch)
     .translateWith(ctxOut)
