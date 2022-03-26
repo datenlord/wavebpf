@@ -57,7 +57,7 @@ object SimUtil {
   }
 
   def dmWriteBytesAxi4(dut: CustomWbpf, addr: Long, data: Seq[Byte]) {
-    assert(data.length > 0 && data.length < 256)
+    assert(data.length > 0 && data.length <= 256)
 
     dut.io.dataMemAxi4.aw.valid #= true
     dut.io.dataMemAxi4.aw.payload.addr #= addr
@@ -83,6 +83,43 @@ object SimUtil {
     dut.io.dataMemAxi4.b.ready #= true
     dut.clockDomain.waitSampling()
     dut.io.dataMemAxi4.b.ready #= false
+  }
+
+  def dmBurstReadAxi4(
+      dut: CustomWbpf,
+      addr: Long,
+      size: Int,
+      len: Int
+  ): Seq[BigInt] = {
+    assert(size == 0 || size == 1 || size == 2)
+    assert(len > 0 && len <= 256)
+
+    dut.io.dataMemAxi4.ar.valid #= true
+    dut.io.dataMemAxi4.ar.payload.addr #= addr
+    dut.io.dataMemAxi4.ar.payload.size #= size
+    dut.io.dataMemAxi4.ar.payload.len #= len - 1
+    dut.io.dataMemAxi4.ar.payload.burst #= 1
+    dut.clockDomain.waitSamplingWhere(dut.io.dataMemAxi4.ar.ready.toBoolean)
+    dut.io.dataMemAxi4.ar.valid #= false
+
+    val ret = new Array[BigInt](len)
+    for (i <- 0 until len) {
+      val curAddr = addr + (i.toLong * scala.math.pow(2, size))
+      dut.clockDomain.waitSamplingWhere(dut.io.dataMemAxi4.r.valid.toBoolean)
+      if (i + 1 == len) {
+        assert(dut.io.dataMemAxi4.r.last.toBoolean)
+      }
+      val value = dut.io.dataMemAxi4.r.payload.data.toBigInt
+      val shiftedValue = value >> ((curAddr % 4) * 8).toInt
+      val mask =
+        if (size == 0) 0xffL else if (size == 1) 0xffffL else 0xffffffffL
+      ret.update(i, shiftedValue & mask)
+      dut.io.dataMemAxi4.r.ready #= true
+      dut.clockDomain.waitSampling()
+      dut.io.dataMemAxi4.r.ready #= false
+    }
+
+    ret
   }
 
   def initDutForTesting(dut: CustomWbpf) {

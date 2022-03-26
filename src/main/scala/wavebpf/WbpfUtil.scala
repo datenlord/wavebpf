@@ -21,6 +21,19 @@ object WbpfUtil {
     ret
   }
 
+  def axSizeToMemAccessWidth64bit(
+      axSize: UInt
+  ): SpinalEnumCraft[MemoryAccessWidth.type] = {
+    val ret = MemoryAccessWidth()
+    switch(axSize) {
+      is(0x0) { ret := MemoryAccessWidth.W1 }
+      is(0x1) { ret := MemoryAccessWidth.W2 }
+      is(0x2) { ret := MemoryAccessWidth.W4 }
+      default { ret := MemoryAccessWidth.W8 }
+    }
+    ret
+  }
+
   def axi4Pipe(x: Axi4): Axi4 = {
     val sink = Axi4(x.config)
 

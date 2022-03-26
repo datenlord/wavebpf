@@ -34,12 +34,89 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
   def toAxi4ReadOnly(): Axi4ReadOnly = {
     val area = new Area {
       val axiMaster = Axi4ReadOnly(DataMemV2Axi4PortConfig())
-      val axi = Axi4ReadOnly(DataMemV2Axi4PortConfig())
-      axi.ar << axiMaster.ar.s2mPipe()
-      axi.r >> axiMaster.r
+      var axi = WbpfUtil.axi4Pipe(axiMaster)
       axi.setBlocked()
       request.setIdle()
       response.freeRun()
+
+      val arSnapshot = Reg(Axi4Ar(DataMemV2Axi4PortConfig()))
+      val issueRemaining = Reg(UInt(arSnapshot.len.getBitsWidth bits))
+      val shouldIssue = Reg(Bool())
+
+      def issueReq() = {
+        request.valid := shouldIssue
+
+        // Signal that we do not want the DM unit to shift the data for us
+        request.payload.precomputedStrbValid := True
+
+        request.payload.addr := (U(
+          0,
+          32 bits
+        ).asBits ## arSnapshot.addr.asBits).asUInt
+        request.payload.write := False
+        request.payload.width := WbpfUtil.axSizeToMemAccessWidth64bit(
+          arSnapshot.size
+        )
+        val nextAddr = (arSnapshot.addr + WbpfUtil.decodeAxSize(
+          arSnapshot.size
+        ))
+        when(request.fire) {
+          /*report(
+            Seq(
+              "AXI R fire addr=",
+              arSnapshot.addr,
+              " w=",
+              request.payload.width
+            )
+          )*/
+          arSnapshot.addr := nextAddr
+          issueRemaining := issueRemaining - 1
+          when(issueRemaining === 0) {
+            shouldIssue := False
+          }
+        }
+      }
+
+      val readFsm = new StateMachine {
+        val waitForAr: State = new State with EntryPoint {
+          whenIsActive {
+            when(axi.ar.valid) {
+              axi.ar.ready := True
+              arSnapshot := axi.ar.payload
+              issueRemaining := axi.ar.payload.len
+              shouldIssue := True
+              goto(sendReadResponse)
+            }
+          }
+        }
+
+        val sendReadResponse: State = new State {
+          whenIsActive {
+            issueReq()
+            axi.r.valid := response.valid
+            axi.r.payload.id := arSnapshot.id
+            axi.r.payload.resp := 0 // OKAY
+            axi.r.payload.data := response.payload.data
+            axi.r.payload.last := arSnapshot.len === 0
+            response.ready := axi.r.ready
+
+            when(axi.r.fire) {
+              /*report(
+                Seq(
+                  "AXI R complete data=",
+                  response.payload.data,
+                  " last=",
+                  axi.r.payload.last
+                )
+              )*/
+              arSnapshot.len := arSnapshot.len - 1
+              when(axi.r.payload.last) {
+                goto(waitForAr)
+              }
+            }
+          }
+        }
+      }
     }
     area.axiMaster
   }
