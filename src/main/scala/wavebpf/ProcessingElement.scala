@@ -12,7 +12,8 @@ case class PeConfig(
     reportCommit: Boolean = true
 )
 
-case class ProcessingElement(config: PeConfig, coreIndex: Int) extends Component {
+case class ProcessingElement(config: PeConfig, coreIndex: Int)
+    extends Component {
   val pcmgr = new PcManager(c = config.insnBuffer, coreIndex = coreIndex)
   var pcUpdater = new PcUpdater(pcmgr)
   val io = new Bundle {
@@ -61,6 +62,10 @@ case class ProcessingElement(config: PeConfig, coreIndex: Int) extends Component
   exec.io.dataMem.request >> io.dm.request
   exec.io.dataMem.response << io.dm.response
   exec.io.branchPcUpdater >> pcUpdater.getUpdater(2)
+
+  val excAck = Bool()
+  excAck := controller.io.excAck
+  exec.io.excAck := excAck
 
   val excReport = new CpuException()
 

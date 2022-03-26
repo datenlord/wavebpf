@@ -14,7 +14,11 @@ case class Controller(
     val refill = master Flow (InsnBufferRefillReq(insnBufferConfig))
     val pcUpdater = master Flow (PcUpdateReq())
     val excReport = in(new CpuException())
+    val excAck = out(Bool())
   }
+
+  val excAckReg = Reg(Bool()) init (False)
+  io.excAck := excAckReg
 
   val refillCounter = Reg(UInt(insnBufferConfig.addrWidth bits)) init (0)
   val refillBuffer = Reg(Bits(32 bits))
@@ -76,6 +80,12 @@ case class Controller(
               io.pcUpdater.payload.flush := True
               io.pcUpdater.payload.flushReason := PcFlushReasonCode.EXTERNAL
               // report(Seq("Update PC: ", mmio.w.payload.data.asUInt))
+            }
+            is(0x08) {
+              // Exception ACK
+              when(io.excReport.valid) {
+                excAckReg := io.excReport.generation
+              }
             }
           }
           goto(sendWriteRsp)

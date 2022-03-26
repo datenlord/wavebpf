@@ -80,6 +80,7 @@ case class Exec(c: ExecConfig) extends Component {
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
     val excOutput = out(new CpuException())
     val branchPcUpdater = master Flow (PcUpdateReq())
+    val excAck = in(Bool())
   }
 
   val rs1Bypass =
@@ -119,6 +120,7 @@ case class Exec(c: ExecConfig) extends Component {
       Seq(rs1Bypass, rs2Bypass),
       Seq(rs1MemStallBypass, rs2MemStallBypass)
     )
+  memStage.io.excAck := io.excAck
 
   val memOutputFlow = memStage.io.output.toFlow
 
@@ -189,6 +191,7 @@ case class ExecMemoryStage(
     val dataMem = DataMemV2Port()
     val output = Stream(MemoryStageInsnContext(c))
     val excOutput = new CpuException()
+    val excAck = Bool()
   }
 
   val outData = MemoryStageInsnContext(c)
@@ -199,6 +202,7 @@ case class ExecMemoryStage(
   excRegInit.code := CpuExceptionCode.NOT_INIT
   excRegInit.data := 0
   excRegInit.pc := 0
+  excRegInit.generation := False
 
   val nextExc = new CpuException()
   val excReg =
@@ -222,11 +226,13 @@ case class ExecMemoryStage(
     nextExc.code := io.aluStage.payload.exc.code
     nextExc.data := io.aluStage.payload.exc.data
     nextExc.pc := io.aluStage.payload.insnFetch.addr.resized
+    nextExc.generation := !io.excAck
   } elsewhen (io.aluStage.valid && !excReg.valid && io.aluStage.payload.br.valid) {
     nextExc.valid := True
     nextExc.code := CpuExceptionCode.PENDING_BRANCH
     nextExc.data := 0
     nextExc.pc := io.aluStage.payload.insnFetch.addr.resized
+    nextExc.generation := !io.excAck // will be overrided in ProcessingElement
     wasBranch.set()
   } otherwise {
     nextExc := excReg
