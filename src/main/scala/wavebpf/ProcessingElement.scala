@@ -9,7 +9,8 @@ case class PeConfig(
     insnBuffer: InsnBufferConfig,
     regFetch: RegfetchConfig,
     splitAluMem: Boolean = false,
-    reportCommit: Boolean = true
+    reportCommit: Boolean = true,
+    bypassMemOutput: Boolean = false
 )
 
 case class PeContextData(coreIndex: Int, numPe: Int)
@@ -53,6 +54,7 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
       regFetch = config.regFetch,
       splitAluMem = config.splitAluMem,
       reportCommit = config.reportCommit,
+      bypassMemOutput = config.bypassMemOutput,
       context = context
     )
   )

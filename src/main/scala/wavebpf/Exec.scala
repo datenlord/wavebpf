@@ -32,6 +32,7 @@ case class ExecConfig(
     regFetch: RegfetchConfig,
     splitAluMem: Boolean,
     reportCommit: Boolean,
+    bypassMemOutput: Boolean,
     context: PeContextData
 )
 
@@ -310,10 +311,12 @@ case class ExecMemoryStage(
   val bypassCtx = AluStageInsnContext(c)
   bypassCtx := maskedAluOutputStaged
 
-  when(output.valid) {
-    bypassCtx.regWritebackValid := output.regWritebackValid
-    bypassCtx.regWriteback := output.payload.regWriteback
-    bypassCtx.memory.valid := False
+  if (c.bypassMemOutput) {
+    when(output.valid) {
+      bypassCtx.regWritebackValid := output.regWritebackValid
+      bypassCtx.regWriteback := output.payload.regWriteback
+      bypassCtx.memory.valid := False
+    }
   }
 
   provideBypassResource(
