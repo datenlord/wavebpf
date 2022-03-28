@@ -39,10 +39,14 @@ case class InsnBuffer(c: InsnBufferConfig) extends Component {
     val readRsp = master Stream (InsnBufferReadRsp(c))
   }
 
+  // `io.readReq` is special in that it can have its payload mutated when valid && !ready.
+  // Special care needs to be taken here - prevent the forks from going out of sync.
   val (readReqToBeStaged, readReqNow) = StreamFork2(io.readReq)
-  val readReqStaged = readReqToBeStaged.stage()
+  val readReqStaged = readReqToBeStaged.stage().stage()
   val readData =
-    mem.streamReadSync(readReqNow.translateWith(readReqNow.payload.addr))
+    mem
+      .streamReadSync(readReqNow.translateWith(readReqNow.payload.addr))
+      .stage()
 
   val rsp = InsnBufferReadRsp(c)
   rsp.addr := readReqStaged.payload.addr

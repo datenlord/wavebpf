@@ -17,6 +17,8 @@ object PcFlushReasonCode extends SpinalEnum(binarySequential) {
 class PcManager(c: InsnBufferConfig) extends Component {
   val io = new Bundle {
     val pc = out UInt (29 bits)
+
+    // XXX: This stream can have its payload mutated when valid && !ready.
     val stream = master Stream (InsnBufferReadReq(c))
     val update = slave Flow (PcUpdateReq())
   }
