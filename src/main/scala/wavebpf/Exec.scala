@@ -198,6 +198,16 @@ case class ExecMemoryStage(
   val outData = MemoryStageInsnContext(c)
   val memRead = Bits(64 bits)
 
+  val aluOutput = Stream(AluStageInsnContext(c))
+  if(c.splitAluMem) {
+    val half = io.aluStage.stage()
+    provideBypassResource(half.asFlow, 0)
+    aluOutput << half.s2mPipe()
+    provideBypassResource(aluOutput.asFlow, 1)
+  } else {
+    aluOutput << io.aluStage
+  }
+
   val excRegInit = new CpuException()
   excRegInit.valid := True
   excRegInit.code := CpuExceptionCode.NOT_INIT
@@ -207,45 +217,39 @@ case class ExecMemoryStage(
 
   val nextExc = new CpuException()
   val excReg =
-    RegNextWhen(next = nextExc, cond = io.aluStage.fire, init = excRegInit)
+    RegNextWhen(next = nextExc, cond = aluOutput.fire, init = excRegInit)
   io.excOutput := excReg
 
   val wasBranch = Bool(false)
 
   when(
-    io.aluStage.valid && (
-      (!excReg.valid && io.aluStage.payload.exc.valid) || (excReg.valid && (
-        io.aluStage.payload.insnFetch.ctx.flush &&
+    aluOutput.valid && (
+      (!excReg.valid && aluOutput.payload.exc.valid) || (excReg.valid && (
+        aluOutput.payload.insnFetch.ctx.flush &&
           ControlFlowPriority.forFlushReason(
-            io.aluStage.payload.insnFetch.ctx.flushReason
+            aluOutput.payload.insnFetch.ctx.flushReason
           ) <=
           ControlFlowPriority.forException(excReg.code)
       ))
     )
   ) {
-    nextExc.valid := io.aluStage.payload.exc.valid
-    nextExc.code := io.aluStage.payload.exc.code
-    nextExc.data := io.aluStage.payload.exc.data
-    nextExc.pc := io.aluStage.payload.insnFetch.addr.resized
+    nextExc.valid := aluOutput.payload.exc.valid
+    nextExc.code := aluOutput.payload.exc.code
+    nextExc.data := aluOutput.payload.exc.data
+    nextExc.pc := aluOutput.payload.insnFetch.addr.resized
     nextExc.generation := !io.excAck
-  } elsewhen (io.aluStage.valid && !excReg.valid && io.aluStage.payload.br.valid) {
+  } elsewhen (aluOutput.valid && !excReg.valid && aluOutput.payload.br.valid) {
     nextExc.valid := True
     nextExc.code := CpuExceptionCode.PENDING_BRANCH
     nextExc.data := 0
-    nextExc.pc := io.aluStage.payload.insnFetch.addr.resized
+    nextExc.pc := aluOutput.payload.insnFetch.addr.resized
     nextExc.generation := !io.excAck // will be overrided in ProcessingElement
     wasBranch.set()
   } otherwise {
     nextExc := excReg
   }
 
-  var maskedAluOutput = io.aluStage.throwWhen(nextExc.valid && !wasBranch)
-  if (c.splitAluMem) {
-    maskedAluOutput = maskedAluOutput.stage()
-    provideBypassResource(maskedAluOutput.asFlow, 0)
-    maskedAluOutput = maskedAluOutput.s2mPipe()
-    provideBypassResource(maskedAluOutput.asFlow, 1)
-  }
+  var maskedAluOutput = aluOutput.throwWhen(nextExc.valid && !wasBranch)
 
   val (maskedAluOutputToMem, maskedAluOutputToStage) = StreamFork2(
     maskedAluOutput
