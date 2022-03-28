@@ -32,7 +32,7 @@ case class ExecConfig(
     regFetch: RegfetchConfig,
     splitAluMem: Boolean,
     reportCommit: Boolean,
-    coreIndex: Int
+    context: PeContextData
 )
 
 case class AluStageInsnContext(
@@ -145,7 +145,7 @@ case class Exec(c: ExecConfig) extends Component {
       report(
         Seq(
           "COMMIT",
-          " core=" + c.coreIndex,
+          " core=" + c.context.coreIndex,
           " pc=",
           memStage.io.output.payload.insnFetch.addr,
           " regwb=",
@@ -574,7 +574,13 @@ case class ExecAluStage(c: ExecConfig) extends Component {
           // get core index
           regWritebackValid := True
           regWritebackData.index := 0
-          regWritebackData.data := c.coreIndex
+          regWritebackData.data := U(0, 32 bits).asBits ## U(
+            c.context.numPe,
+            16 bits
+          ).asBits ## U(
+            c.context.coreIndex,
+            16 bits
+          ).asBits
         }
         default {
           // exception

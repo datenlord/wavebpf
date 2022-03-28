@@ -29,7 +29,10 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     val excInterrupt = out Bool ()
   }
   val peList = (0 until config.numPe).map(i => {
-    val pe = new ProcessingElement(config.pe, i)
+    val pe = new ProcessingElement(
+      config.pe,
+      PeContextData(coreIndex = i, numPe = config.numPe)
+    )
     val dm = dataMemory.use()
     pe.io.dm.request >> dm.request
     pe.io.dm.response << dm.response

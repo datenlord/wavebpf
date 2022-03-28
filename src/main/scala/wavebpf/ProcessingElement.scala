@@ -12,9 +12,11 @@ case class PeConfig(
     reportCommit: Boolean = true
 )
 
-case class ProcessingElement(config: PeConfig, coreIndex: Int)
+case class PeContextData(coreIndex: Int, numPe: Int)
+
+case class ProcessingElement(config: PeConfig, context: PeContextData)
     extends Component {
-  val pcmgr = new PcManager(c = config.insnBuffer, coreIndex = coreIndex)
+  val pcmgr = new PcManager(c = config.insnBuffer)
   var pcUpdater = new PcUpdater(pcmgr)
   val io = new Bundle {
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
@@ -24,7 +26,7 @@ case class ProcessingElement(config: PeConfig, coreIndex: Int)
   }
 
   val controller =
-    new Controller(insnBufferConfig = config.insnBuffer)
+    new Controller(insnBufferConfig = config.insnBuffer, context = context)
   controller.io.mmio << io.mmio
   controller.io.pcUpdater >> pcUpdater.getUpdater(1)
 
@@ -51,7 +53,7 @@ case class ProcessingElement(config: PeConfig, coreIndex: Int)
       regFetch = config.regFetch,
       splitAluMem = config.splitAluMem,
       reportCommit = config.reportCommit,
-      coreIndex = coreIndex
+      context = context
     )
   )
   exec.io.regFetch << regfile.io.readRsp

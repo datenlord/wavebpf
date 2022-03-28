@@ -1,8 +1,8 @@
-static long (*getCoreIndex)() = (void *)1;
+static long (*getCoreIndexAndCount)() = (void *)1;
 
 void indirectSort()
 {
-  long coreIndex = getCoreIndex();
+  long coreIndex = getCoreIndexAndCount() & 0xffff;
   long stackAddr = 0x2000 - coreIndex * 0x100;
   asm volatile("r10 = %0"
                :

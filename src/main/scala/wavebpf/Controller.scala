@@ -7,7 +7,8 @@ import spinal.lib.bus.amba4.axi._
 import spinal.lib.bus.amba4.axilite._
 
 case class Controller(
-    insnBufferConfig: InsnBufferConfig
+    insnBufferConfig: InsnBufferConfig,
+    context: PeContextData
 ) extends Component {
   val io = new Bundle {
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
@@ -152,6 +153,11 @@ case class Controller(
               (False, U(0, 32 bits).asBits),
               (True, data.asBits)
             )
+          }
+          is(0x0c) {
+            val data =
+              U(context.numPe, 16 bits) ## U(context.coreIndex, 16 bits)
+            mmio.r.payload.data := data.asBits
           }
           default {
             mmio.r.payload.data := 0

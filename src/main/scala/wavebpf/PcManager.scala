@@ -14,7 +14,7 @@ object PcFlushReasonCode extends SpinalEnum(binarySequential) {
   val BRANCH_RESOLVE, EXTERNAL, STOP = newElement()
 }
 
-class PcManager(c: InsnBufferConfig, coreIndex: Int) extends Component {
+class PcManager(c: InsnBufferConfig) extends Component {
   val io = new Bundle {
     val pc = out UInt (29 bits)
     val stream = master Stream (InsnBufferReadReq(c))
