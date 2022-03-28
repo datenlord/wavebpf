@@ -94,7 +94,8 @@ object DefaultWbpfConfig {
           addrWidth = 11
         ),
         regFetch = RegfetchConfig(),
-        splitAluMem = true
+        splitAluMem = true,
+        bypassMemOutput = false
       ),
       dataMemSize = 8192,
       numPe = 4

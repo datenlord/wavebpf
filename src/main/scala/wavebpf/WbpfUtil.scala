@@ -6,6 +6,7 @@ import spinal.lib.bus.amba4.axi._
 import spinal.lib.bus.amba4.axilite._
 
 object WbpfUtil {
+  def hwRevision = 0x00010001L;
   def decodeAxSize(axSize: UInt): UInt = {
     val ret = UInt(32 bits)
     switch(axSize) {

@@ -159,6 +159,9 @@ case class Controller(
               U(context.numPe, 16 bits) ## U(context.coreIndex, 16 bits)
             mmio.r.payload.data := data.asBits
           }
+          is(0x0d) {
+            mmio.r.payload.data := WbpfUtil.hwRevision
+          }
           default {
             mmio.r.payload.data := 0
           }
