@@ -638,14 +638,14 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       io.insnFetch.payload.ctx.prediction.valid &&
       io.insnFetch.payload.ctx.prediction.predictedTarget === br.addr.resized
   ) {
-    report(
+    /*report(
       Seq(
         "Suppressing branch request due to prediction hit - ",
         io.insnFetch.payload.addr,
         " -> ",
         br.addr
       )
-    )
+    )*/
     brOverride.valid := False
     brOverride.addr.assignDontCare()
   } elsewhen (
@@ -653,7 +653,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       io.insnFetch.payload.ctx.prediction.valid &&
       io.insnFetch.payload.ctx.prediction.predictedTarget =/= sequentialNextPc
   ) {
-    report(
+    /*report(
       Seq(
         "Fixing up false-positive branch - ",
         io.insnFetch.payload.addr,
@@ -662,7 +662,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
         ", should be ",
         sequentialNextPc
       )
-    )
+    )*/
     brOverride.valid := True
     brOverride.addr := sequentialNextPc.resized
   } otherwise {

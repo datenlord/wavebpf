@@ -92,7 +92,7 @@ object DefaultWbpfConfig {
       pe = PeConfig(
         insnBuffer = InsnBufferConfig(
           addrWidth = 11,
-          btbSize = 16
+          btbSize = 4
         ),
         regFetch = RegfetchConfig(),
         splitAluMem = true,

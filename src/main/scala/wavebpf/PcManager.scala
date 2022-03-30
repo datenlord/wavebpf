@@ -36,12 +36,21 @@ class PcManager(c: InsnBufferConfig) extends Component {
     val lru = UInt(log2Up(c.btbSize) bits)
   }
 
-  def lookupBtb(toMatch: UInt): BtbEntry = btb.reduceBalancedTree((l, r) =>
-    (l.valid && l.source === toMatch).mux(
-      True -> l,
-      False -> r
+  def lookupBtb(toMatch: UInt): BtbEntry = {
+    val matchState = Vec(btb.zipWithIndex.map(x => {
+      val (b, i) = x
+      val entry = BtbEntry()
+      entry.valid := b.valid && b.source === toMatch
+      entry.assignUnassignedByName(b)
+      entry
+    }))
+    matchState.reduceBalancedTree((l, r) =>
+      l.valid.mux(
+        True -> l,
+        False -> r
+      )
     )
-  )
+  }
 
   val btb = Vec((0 until c.btbSize).map({ i =>
     val init = BtbEntry()
@@ -129,7 +138,7 @@ class PcManager(c: InsnBufferConfig) extends Component {
 
     when(btbLookupForCurrentPc.valid) {
       /*report(
-        Seq("Prediction: ", currentPc, " -> ", btbLookupForCurrentPc.target)
+        Seq("Prediction: ", currentPc, " -> ", btbLookupForCurrentPc.source, " ", btbLookupForCurrentPc.target)
       )
       report(
         Seq(Seq("LRU state: "), btb.map(x => Seq(x.lru, " ")).flatten).flatten
