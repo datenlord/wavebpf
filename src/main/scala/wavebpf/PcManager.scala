@@ -63,9 +63,11 @@ class PcManager(c: InsnBufferConfig) extends Component {
 
   val btbLookupForCurrentPc = lookupBtb(currentPc.resized)
 
-  val btbUpdate = BtbEntry()
-  btbUpdate.assignDontCare()
-  btbUpdate.valid := False
+  val btbUpdateInit = BtbEntry()
+  btbUpdateInit.assignDontCare()
+  btbUpdateInit.valid := False
+
+  val btbUpdate = Reg(BtbEntry()) init (btbUpdateInit)
 
   // Write LRU
   when(btbUpdate.valid) {
