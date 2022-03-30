@@ -36,6 +36,17 @@ class PcManager(c: InsnBufferConfig) extends Component {
     val lru = UInt(log2Up(c.btbSize) bits)
   }
 
+  val btb =
+    if (c.useBtb) Vec((0 until c.btbSize).map({ i =>
+      val init = BtbEntry()
+      init.assignDontCare()
+      init.valid := False
+      init.lru := i
+      val r = Reg(BtbEntry()) init (init)
+      r
+    }))
+    else null
+
   def lookupBtb(toMatch: UInt): BtbEntry = {
     val matchState = Vec(btb.zipWithIndex.map(x => {
       val (b, i) = x
@@ -52,61 +63,54 @@ class PcManager(c: InsnBufferConfig) extends Component {
     )
   }
 
-  val btb = Vec((0 until c.btbSize).map({ i =>
-    val init = BtbEntry()
-    init.assignDontCare()
-    init.valid := False
-    init.lru := i
-    val r = Reg(BtbEntry()) init (init)
-    r
-  }))
-
-  val btbLookupForCurrentPc = lookupBtb(currentPc.resized)
+  val btbLookupForCurrentPc =
+    if (c.useBtb) lookupBtb(currentPc.resized) else null
 
   val btbUpdateInit = BtbEntry()
   btbUpdateInit.assignDontCare()
   btbUpdateInit.valid := False
 
-  val btbUpdate = Reg(BtbEntry()) init (btbUpdateInit)
+  val btbUpdate = if (c.useBtb) Reg(BtbEntry()) init (btbUpdateInit) else null
 
   // Write LRU
-  when(btbUpdate.valid) {
-    val threshold = UInt(log2Up(c.btbSize) bits)
-    threshold.assignDontCare()
+  if (c.useBtb) {
+    when(btbUpdate.valid) {
+      val threshold = UInt(log2Up(c.btbSize) bits)
+      threshold.assignDontCare()
 
-    val replace = Bool()
-    replace := False
+      val replace = Bool()
+      replace := False
 
-    // First, try updating an existing entry
-    for ((entry, i) <- btb.zipWithIndex) {
-      when(entry.valid && entry.source === btbUpdate.source) {
-        // report(Seq("Replacing BTB index " + i))
-        entry.target := btbUpdate.target
-        entry.lru := c.btbSize - 1
-        replace := True
-        threshold := entry.lru
+      // First, try updating an existing entry
+      for ((entry, i) <- btb.zipWithIndex) {
+        when(entry.valid && entry.source === btbUpdate.source) {
+          // report(Seq("Replacing BTB index " + i))
+          entry.target := btbUpdate.target
+          entry.lru := c.btbSize - 1
+          replace := True
+          threshold := entry.lru
+        }
       }
-    }
 
-    // Then, try popping the oldest entry
-    for ((entry, i) <- btb.zipWithIndex) {
-      when(entry.lru === 0 && !replace) {
-        // report(Seq("Writing to BTB index " + i))
-        entry.valid := True
-        entry.source := btbUpdate.source
-        entry.target := btbUpdate.target
-        entry.lru := c.btbSize - 1
-        threshold := 0
+      // Then, try popping the oldest entry
+      for ((entry, i) <- btb.zipWithIndex) {
+        when(entry.lru === 0 && !replace) {
+          // report(Seq("Writing to BTB index " + i))
+          entry.valid := True
+          entry.source := btbUpdate.source
+          entry.target := btbUpdate.target
+          entry.lru := c.btbSize - 1
+          threshold := 0
+        }
       }
-    }
 
-    // Update LRU counter
-    for ((entry, i) <- btb.zipWithIndex) {
-      when(entry.lru > threshold) {
-        entry.lru := entry.lru - 1
+      // Update LRU counter
+      for ((entry, i) <- btb.zipWithIndex) {
+        when(entry.lru > threshold) {
+          entry.lru := entry.lru - 1
+        }
       }
-    }
-    /*
+      /*
     report(
       Seq(
         "BTB update -",
@@ -122,30 +126,41 @@ class PcManager(c: InsnBufferConfig) extends Component {
         btb.map(x => Seq(x.lru, " ")).flatten
       ).flatten
     )*/
+    }
   }
 
   io.stream.valid := True
   io.stream.payload.addr := currentPc.resized
   io.stream.payload.ctx.flush := flush
   io.stream.payload.ctx.flushReason := flushReason
-  io.stream.payload.ctx.prediction.valid := btbLookupForCurrentPc.valid
-  io.stream.payload.ctx.prediction.predictedTarget := btbLookupForCurrentPc.target
+  if (c.useBtb) {
+    io.stream.payload.ctx.prediction.valid := btbLookupForCurrentPc.valid
+    io.stream.payload.ctx.prediction.predictedTarget := btbLookupForCurrentPc.target
+  } else {
+    io.stream.payload.ctx.prediction.valid := False
+    io.stream.payload.ctx.prediction.predictedTarget.assignDontCare()
+  }
 
   when(io.stream.ready) {
-    currentPc := btbLookupForCurrentPc.valid.mux(
-      True -> btbLookupForCurrentPc.target.resized,
-      False -> (currentPc + 1)
-    )
     flush := False
 
-    when(btbLookupForCurrentPc.valid) {
-      /*report(
+    if (c.useBtb) {
+      currentPc := btbLookupForCurrentPc.valid.mux(
+        True -> btbLookupForCurrentPc.target.resized,
+        False -> (currentPc + 1)
+      )
+
+      when(btbLookupForCurrentPc.valid) {
+        /*report(
         Seq("Prediction: ", currentPc, " -> ", btbLookupForCurrentPc.source, " ", btbLookupForCurrentPc.target)
       )
       report(
         Seq(Seq("LRU state: "), btb.map(x => Seq(x.lru, " ")).flatten).flatten
       )*/
-      btbUpdate := btbLookupForCurrentPc
+        btbUpdate := btbLookupForCurrentPc
+      }
+    } else {
+      currentPc := currentPc + 1
     }
   }
 
@@ -154,10 +169,12 @@ class PcManager(c: InsnBufferConfig) extends Component {
     flush := io.update.flush
     flushReason := io.update.flushReason
 
-    when(io.update.payload.branchSourceValid) {
-      btbUpdate.valid := True
-      btbUpdate.source := io.update.payload.branchSource.resized
-      btbUpdate.target := io.update.pc.resized
+    if (c.useBtb) {
+      when(io.update.payload.branchSourceValid) {
+        btbUpdate.valid := True
+        btbUpdate.source := io.update.payload.branchSource.resized
+        btbUpdate.target := io.update.pc.resized
+      }
     }
   }
 }

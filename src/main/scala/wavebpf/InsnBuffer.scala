@@ -5,6 +5,7 @@ import spinal.lib._
 
 case class InsnBufferConfig(
     addrWidth: Int,
+    useBtb: Boolean,
     btbSize: Int
 )
 

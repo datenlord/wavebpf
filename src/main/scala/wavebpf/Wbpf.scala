@@ -92,6 +92,7 @@ object DefaultWbpfConfig {
       pe = PeConfig(
         insnBuffer = InsnBufferConfig(
           addrWidth = 11,
+          useBtb = true,
           btbSize = 8
         ),
         regFetch = RegfetchConfig(),
