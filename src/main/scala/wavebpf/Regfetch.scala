@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 
 case class RegfetchConfig(
-    numRegs: Int = 11,
+    numRegs: Int = 16,
     isAsync: Boolean = true
 );
 
