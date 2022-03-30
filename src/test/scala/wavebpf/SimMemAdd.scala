@@ -10,7 +10,7 @@ class SimMemAddSpec extends AnyFunSuite {
   // tests go here...
   test("SimMemAdd") {
     import SimUtil._
-    SimConfig.withWave.doSim(new Wbpf) { dut =>
+    runWithAllBackends(new Wbpf) { dut =>
       initDutForTesting(dut)
 
       val firstExc = dut.io.excOutput.head

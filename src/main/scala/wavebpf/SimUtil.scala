@@ -5,6 +5,13 @@ import spinal.sim._
 import spinal.core.sim._
 
 object SimUtil {
+  def runWithAllBackends[T <: Component](
+      rtl: => T
+  )(body: T => Unit): Unit = {
+    SimConfig.withIVerilog.doSim(rtl)(body)
+    SimConfig.withVerilator.doSim(rtl)(body)
+  }
+
   def dmReadOnce(
       dut: CustomWbpf,
       addr: BigInt,

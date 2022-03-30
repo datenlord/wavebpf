@@ -10,7 +10,7 @@ class SimDmAxi4Spec extends AnyFunSuite {
   // tests go here...
   test("SimDmAxi4") {
     import SimUtil._
-    SimConfig.withWave.doSim(new Wbpf) { dut =>
+    runWithAllBackends(new Wbpf) { dut =>
       initDutForTesting(dut)
       dmWriteBytesAxi4(dut, 0x0, Seq(1, 2, 3, 4, 5, 6, 7, 8))
       assert(dmReadOnce(dut, 0x0) == BigInt("0807060504030201", 16))

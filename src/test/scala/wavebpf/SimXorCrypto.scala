@@ -12,7 +12,7 @@ class SimXorCryptoSpec extends AnyFunSuite {
   test("SimXorCrypto") {
     import SimUtil._
     val config = DefaultWbpfConfig()
-    SimConfig.withWave.doSim(
+    runWithAllBackends(
       new CustomWbpf(config.copy(pe = config.pe.copy(reportCommit = false)))
     ) { dut =>
       initDutForTesting(dut)

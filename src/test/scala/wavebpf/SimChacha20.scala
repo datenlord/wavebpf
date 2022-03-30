@@ -13,7 +13,7 @@ class SimChacha20Spec extends AnyFunSuite {
   test("SimChacha20") {
     import SimUtil._
     val config = DefaultWbpfConfig()
-    SimConfig.withWave.doSim(
+    runWithAllBackends(
       new CustomWbpf(config.copy(pe = config.pe.copy(reportCommit = false)))
     ) { dut =>
       initDutForTesting(dut)
