@@ -10,7 +10,8 @@ case class PeConfig(
     regFetch: RegfetchConfig,
     splitAluMem: Boolean = false,
     reportCommit: Boolean = true,
-    bypassMemOutput: Boolean = false
+    bypassMemOutput: Boolean = false,
+    useBtbForConditionalBranches: Boolean = true
 )
 
 case class PeContextData(coreIndex: Int, numPe: Int)
@@ -63,7 +64,8 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
       splitAluMem = config.splitAluMem,
       reportCommit = config.reportCommit,
       bypassMemOutput = config.bypassMemOutput,
-      context = context
+      context = context,
+      useBtbForConditionalBranches = config.useBtbForConditionalBranches
     )
   )
   exec.io.regFetch << regfile.io.readRsp

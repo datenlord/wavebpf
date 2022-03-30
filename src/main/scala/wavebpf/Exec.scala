@@ -33,7 +33,8 @@ case class ExecConfig(
     splitAluMem: Boolean,
     reportCommit: Boolean,
     bypassMemOutput: Boolean,
-    context: PeContextData
+    context: PeContextData,
+    useBtbForConditionalBranches: Boolean
 )
 
 case class AluStageInsnContext(
@@ -70,6 +71,7 @@ case class MemoryStageInsnContext(
 
 case class BranchReq() extends Bundle {
   val valid = Bool()
+  val isConditional = Bool()
   val addr = UInt(29 bits)
 }
 
@@ -139,7 +141,7 @@ case class Exec(c: ExecConfig) extends Component {
   pcUpdateReq.pc := memStage.io.output.payload.br.addr
   pcUpdateReq.flush := True
   pcUpdateReq.flushReason := PcFlushReasonCode.BRANCH_RESOLVE
-  pcUpdateReq.branchSourceValid := True
+  pcUpdateReq.branchSourceValid := Bool(c.useBtbForConditionalBranches) || !memStage.io.output.payload.br.isConditional
   pcUpdateReq.branchSource := memStage.io.output.payload.insnFetch.addr.resized
   memOutputFlow
     .throwWhen(!memStage.io.output.payload.br.valid)
@@ -380,6 +382,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   val br = BranchReq()
   br.valid := False
+  br.isConditional := True
   br.addr := io.insnFetch.payload.addr.resize(29 bits) + 1 + offset32.resize(
     29 bits
   )
@@ -535,6 +538,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     is(0x05) {
       // PC += off
       br.valid := True
+      br.isConditional := False
 
       // SP adjustment
       regWritebackValid := True
@@ -651,6 +655,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     )*/
     brOverride.valid := False
     brOverride.addr.assignDontCare()
+    brOverride.isConditional.assignDontCare()
   } elsewhen (
     !br.valid &&
       io.insnFetch.payload.ctx.prediction.valid &&
@@ -668,6 +673,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     )*/
     brOverride.valid := True
     brOverride.addr := sequentialNextPc.resized
+    brOverride.isConditional := False
   } otherwise {
     brOverride := br
   }
