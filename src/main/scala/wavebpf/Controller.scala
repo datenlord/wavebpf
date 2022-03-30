@@ -126,6 +126,10 @@ case class Controller(
           is(0x00) {
             mmio.r.payload.data := refillCounter.asBits.resized
           }
+          is(0x03) {
+            // Insn buffer size
+            mmio.r.payload.data := BigInt("1") << insnBufferConfig.addrWidth
+          }
           is(0x06) {
             val pc = io.excReport.pc.asBits << 3
             val data = pc(31 downto 0)
