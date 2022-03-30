@@ -95,6 +95,7 @@ class SimIndirectSortSpec extends AnyFunSuite {
         assert(dut.io.excOutput(ci).valid.toBoolean)
         mmioWrite(dut, 0x18 + 0x1000 * (ci + 1), 0x00)
       }
+      resetPerfCounters(dut, 0)
 
       dut.clockDomain.waitSamplingWhere(
         !coreIndices.exists(i => dut.io.excOutput(i).valid.toBoolean)
@@ -114,6 +115,7 @@ class SimIndirectSortSpec extends AnyFunSuite {
         }
       }
       println("Cycle count: " + cycleCount)
+      printPerfCounters(dut, 0)
 
       for ((indices, baseAddr) <- indiceGroups.zip(indicesBaseAddrs)) {
         val sortedIndices =

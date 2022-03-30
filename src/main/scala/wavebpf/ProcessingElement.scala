@@ -75,6 +75,7 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
   exec.io.dataMem.request >> io.dm.request
   exec.io.dataMem.response << io.dm.response
   exec.io.branchPcUpdater >> pcUpdater.getUpdater(2)
+  controller.io.commitFire := exec.io.commitFire
 
   val excAck = Bool()
   excAck := controller.io.excAck

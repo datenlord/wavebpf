@@ -181,6 +181,31 @@ object SimUtil {
     ret
   }
 
+  def resetPerfCounters(dut: CustomWbpf, peIndex: Int): Unit = {
+    mmioWrite(dut, 0x1000 * (peIndex + 1) + 0x10 * 4, 0)
+  }
+
+  def readPerfCounters(dut: CustomWbpf, peIndex: Int): (BigInt, BigInt) = {
+    val cycles =
+      (mmioRead(dut, 0x1000 * (peIndex + 1) + 0x11 * 4) << 32) | mmioRead(
+        dut,
+        0x1000 * (peIndex + 1) + 0x10 * 4
+      )
+    val commits =
+      (mmioRead(dut, 0x1000 * (peIndex + 1) + 0x13 * 4) << 32) | mmioRead(
+        dut,
+        0x1000 * (peIndex + 1) + 0x12 * 4
+      )
+    (cycles, commits)
+  }
+
+  def printPerfCounters(dut: CustomWbpf, peIndex: Int): Unit = {
+    val (cycles, commits) = readPerfCounters(dut, peIndex)
+    println(
+      "perfcounters pe@" + peIndex + ": cycles=" + cycles + " commits=" + commits + " utilization=" + (commits.toDouble / cycles.toDouble)
+    )
+  }
+
   def loadCode(
       dut: CustomWbpf,
       coreIndex: Int,

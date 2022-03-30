@@ -82,6 +82,7 @@ case class Exec(c: ExecConfig) extends Component {
     val excOutput = out(new CpuException())
     val branchPcUpdater = master Flow (PcUpdateReq())
     val excAck = in(Bool())
+    val commitFire = out(Bool())
   }
 
   val rs1Bypass =
@@ -143,6 +144,8 @@ case class Exec(c: ExecConfig) extends Component {
   memOutputFlow
     .throwWhen(!memStage.io.output.payload.br.valid)
     .translateWith(pcUpdateReq) >> io.branchPcUpdater
+
+  io.commitFire := memOutputFlow.fire
 
   if (c.reportCommit) {
     when(memOutputFlow.fire) {

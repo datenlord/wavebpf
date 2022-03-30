@@ -16,6 +16,15 @@ case class Controller(
     val pcUpdater = master Flow (PcUpdateReq())
     val excReport = in(new CpuException())
     val excAck = out(Bool())
+    val commitFire = in(Bool())
+  }
+
+  val perfCounter_cycles = Reg(UInt(64 bits)) init (0)
+  val perfCounter_commits = Reg(UInt(64 bits)) init (0)
+
+  perfCounter_cycles := perfCounter_cycles + 1
+  when(io.commitFire) {
+    perfCounter_commits := perfCounter_commits + 1
   }
 
   val excAckReg = Reg(Bool()) init (False)
@@ -89,6 +98,10 @@ case class Controller(
               when(io.excReport.valid) {
                 excAckReg := io.excReport.generation
               }
+            }
+            is(0x10) {
+              perfCounter_cycles := 0
+              perfCounter_commits := 0
             }
           }
           goto(sendWriteRsp)
@@ -167,6 +180,18 @@ case class Controller(
           }
           is(0x0d) {
             mmio.r.payload.data := WbpfUtil.hwRevision
+          }
+          is(0x10) {
+            mmio.r.payload.data := perfCounter_cycles(31 downto 0).asBits
+          }
+          is(0x11) {
+            mmio.r.payload.data := perfCounter_cycles(63 downto 32).asBits
+          }
+          is(0x12) {
+            mmio.r.payload.data := perfCounter_commits(31 downto 0).asBits
+          }
+          is(0x13) {
+            mmio.r.payload.data := perfCounter_commits(63 downto 32).asBits
           }
           default {
             mmio.r.payload.data := 0

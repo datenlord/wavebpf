@@ -53,6 +53,7 @@ class SimChacha20Spec extends AnyFunSuite {
       assert(firstExc.code.toEnum == CpuExceptionCode.NOT_INIT)
 
       mmioWrite(dut, 0x1018, 0x00)
+      resetPerfCounters(dut, 0)
       dut.clockDomain.waitSamplingWhere(!firstExc.valid.toBoolean)
       var cycleCount = 0
       while (!firstExc.valid.toBoolean) {
@@ -62,6 +63,7 @@ class SimChacha20Spec extends AnyFunSuite {
       assert(firstExc.code.toEnum == CpuExceptionCode.EXIT)
 
       println("Cycles: " + cycleCount)
+      printPerfCounters(dut, 0)
       val chacha20 = new wavebpf.testutil.ChaCha20(key, nonce, 0)
       val expected = new Array[Byte](data.length)
       chacha20.encrypt(expected, data, data.length)
