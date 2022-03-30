@@ -38,6 +38,15 @@ case class Controller(
   val awSnapshot = Reg(AxiLite4Ax(MMIOBusConfigV2()))
   val writeAddr = awSnapshot.addr(11 downto 2)
 
+  def flushPc(reason: SpinalEnumCraft[PcFlushReasonCode.type]): Unit = {
+    io.pcUpdater.valid := True
+    io.pcUpdater.payload.pc := 0
+    io.pcUpdater.payload.flush := True
+    io.pcUpdater.payload.flushReason := reason
+    io.pcUpdater.payload.branchSourceValid := False
+    io.pcUpdater.payload.branchSource.assignDontCare()
+  }
+
   val writeFsm = new StateMachine {
     val waitForAw: State = new State with EntryPoint {
       whenIsActive {
@@ -60,10 +69,7 @@ case class Controller(
               refillCounter := value
             }
             is(0x01) {
-              io.pcUpdater.valid := True
-              io.pcUpdater.payload.pc := 0
-              io.pcUpdater.payload.flush := True
-              io.pcUpdater.payload.flushReason := PcFlushReasonCode.STOP
+              flushPc(PcFlushReasonCode.STOP)
             }
             is(0x02) {
               refillBuffer := mmio.w.payload.data
@@ -76,11 +82,7 @@ case class Controller(
               refillCounter := refillCounter + 1
             }
             is(0x06) {
-              io.pcUpdater.valid := True
-              io.pcUpdater.payload.pc := mmio.w.payload.data.asUInt.resized
-              io.pcUpdater.payload.flush := True
-              io.pcUpdater.payload.flushReason := PcFlushReasonCode.EXTERNAL
-              // report(Seq("Update PC: ", mmio.w.payload.data.asUInt))
+              flushPc(PcFlushReasonCode.EXTERNAL)
             }
             is(0x08) {
               // Exception ACK

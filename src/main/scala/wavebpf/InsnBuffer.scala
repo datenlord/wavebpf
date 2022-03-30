@@ -4,12 +4,19 @@ import spinal.core._
 import spinal.lib._
 
 case class InsnBufferConfig(
-    addrWidth: Int
+    addrWidth: Int,
+    btbSize: Int
 )
 
-case class InsnBufferReadContext() extends Bundle {
+case class InsnBufferReadContext(c: InsnBufferConfig) extends Bundle {
   val flush = Bool()
   val flushReason = PcFlushReasonCode()
+  val prediction = BranchPrediction(c)
+}
+
+case class BranchPrediction(c: InsnBufferConfig) extends Bundle {
+  val valid = Bool()
+  val predictedTarget = UInt(c.addrWidth bits)
 }
 
 case class InsnBufferRefillReq(c: InsnBufferConfig) extends Bundle {
@@ -19,13 +26,13 @@ case class InsnBufferRefillReq(c: InsnBufferConfig) extends Bundle {
 
 case class InsnBufferReadReq(c: InsnBufferConfig) extends Bundle {
   val addr = UInt(c.addrWidth bits)
-  val ctx = InsnBufferReadContext()
+  val ctx = InsnBufferReadContext(c)
 }
 
 case class InsnBufferReadRsp(c: InsnBufferConfig) extends Bundle {
   val addr = UInt(c.addrWidth bits)
   val insn = Bits(64 bits)
-  val ctx = InsnBufferReadContext()
+  val ctx = InsnBufferReadContext(c)
 
   def imm = this.insn(63 downto 32).asSInt.resize(64).asUInt
 }

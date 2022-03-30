@@ -109,6 +109,7 @@ case class Exec(c: ExecConfig) extends Component {
   rfOverride.rs2.data := rs2Bypass.bypassed
 
   val aluStage = new ExecAluStage(c)
+  aluStage.io.bypassEmpty := rs1Bypass.empty && rs2Bypass.empty
   io.regFetch
     .translateWith(rfOverride)
     .continueWhen(
@@ -137,6 +138,8 @@ case class Exec(c: ExecConfig) extends Component {
   pcUpdateReq.pc := memStage.io.output.payload.br.addr
   pcUpdateReq.flush := True
   pcUpdateReq.flushReason := PcFlushReasonCode.BRANCH_RESOLVE
+  pcUpdateReq.branchSourceValid := True
+  pcUpdateReq.branchSource := memStage.io.output.payload.insnFetch.addr.resized
   memOutputFlow
     .throwWhen(!memStage.io.output.payload.br.valid)
     .translateWith(pcUpdateReq) >> io.branchPcUpdater
@@ -334,6 +337,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     val regFetch = slave Stream (RegGroupContext(c.regFetch, Bits(64 bits)))
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
     val output = master Stream (AluStageInsnContext(c))
+    val bypassEmpty = in Bool ()
   }
 
   val opcode = io.insnFetch.payload.insn(7 downto 0)
@@ -626,6 +630,45 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     whenFalse = regWritebackData.data
   )
 
+  // Do not issue a branch if our prediction is correct
+  val brOverride = BranchReq()
+  val sequentialNextPc = io.insnFetch.payload.addr + 1
+  when(
+    br.valid &&
+      io.insnFetch.payload.ctx.prediction.valid &&
+      io.insnFetch.payload.ctx.prediction.predictedTarget === br.addr.resized
+  ) {
+    report(
+      Seq(
+        "Suppressing branch request due to prediction hit - ",
+        io.insnFetch.payload.addr,
+        " -> ",
+        br.addr
+      )
+    )
+    brOverride.valid := False
+    brOverride.addr.assignDontCare()
+  } elsewhen (
+    !br.valid &&
+      io.insnFetch.payload.ctx.prediction.valid &&
+      io.insnFetch.payload.ctx.prediction.predictedTarget =/= sequentialNextPc
+  ) {
+    report(
+      Seq(
+        "Fixing up false-positive branch - ",
+        io.insnFetch.payload.addr,
+        " -> ",
+        io.insnFetch.payload.ctx.prediction.predictedTarget,
+        ", should be ",
+        sequentialNextPc
+      )
+    )
+    brOverride.valid := True
+    brOverride.addr := sequentialNextPc.resized
+  } otherwise {
+    brOverride := br
+  }
+
   val ctxOut = AluStageInsnContext(c)
   ctxOut.regFetch := io.regFetch
   ctxOut.insnFetch := io.insnFetch
@@ -633,7 +676,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   ctxOut.regWriteback := regWritebackOverride
   ctxOut.exc := exc
   ctxOut.memory := memory
-  ctxOut.br := br
+  ctxOut.br := brOverride
 
   when(
     io.insnFetch.payload.ctx.flush && io.insnFetch.payload.ctx.flushReason === PcFlushReasonCode.STOP
@@ -647,6 +690,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   val outStream = StreamJoin
     .arg(io.regFetch, io.insnFetch)
+    .continueWhen(!io.insnFetch.payload.ctx.flush || io.bypassEmpty)
     .translateWith(ctxOut)
 
   io.output << outStream

@@ -11,6 +11,7 @@ class BypassNetwork[K <: Data, V <: Data](
   val srcKey = keyType()
   val srcValue = valueType()
   val bypassed = valueType()
+  val empty = Bool()
 
   val providers = new ArrayBuffer[(Int, Int, Bool, V)]()
 
@@ -20,11 +21,15 @@ class BypassNetwork[K <: Data, V <: Data](
 
   Component.current.afterElaboration {
     bypassed := srcValue
-    providers.sortBy({ x => (x._1, x._2) }).reverse.foreach((x) => {
-      val (prio, subprio, valid, data) = x
+    empty := True
+    providers
+      .sortBy({ x => (x._1, x._2) })
+      .reverse
+      .foreach((x) => {
+        val (prio, subprio, valid, data) = x
 
-      when(valid) {
-        /*report(
+        when(valid) {
+          /*report(
           Seq(
             "bypass match prio ",
             U(prio, 32 bits),
@@ -36,8 +41,9 @@ class BypassNetwork[K <: Data, V <: Data](
             data
           )
         )*/
-        bypassed := data
-      }
-    })
+          bypassed := data
+          empty := False
+        }
+      })
   }
 }
