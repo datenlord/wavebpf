@@ -199,7 +199,7 @@ case class ExecMemoryStage(
   val memRead = Bits(64 bits)
 
   val aluOutput = Stream(AluStageInsnContext(c))
-  if(c.splitAluMem) {
+  if (c.splitAluMem) {
     val half = io.aluStage.stage()
     provideBypassResource(half.asFlow, 0)
     aluOutput << half.s2mPipe()
@@ -338,6 +338,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   val opcode = io.insnFetch.payload.insn(7 downto 0)
   val rdIndex = io.insnFetch.payload.insn(11 downto 8).asUInt
+  val rs2Index = io.regFetch.payload.rs2.index
   val imm = io.insnFetch.payload.imm
   val rs1 = io.regFetch.payload.rs1.data.asUInt
   val rs2 = io.regFetch.payload.rs2.data.asUInt
@@ -527,6 +528,11 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     is(0x05) {
       // PC += off
       br.valid := True
+
+      // SP adjustment
+      regWritebackValid := True
+      regWritebackData.index := 10
+      regWritebackData.data := (rs1 + imm).asBits
     }
     is(0x15, 0x1d) {
       // jeq
@@ -572,7 +578,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       // exit
       exc.valid := True
       exc.code := CpuExceptionCode.EXIT
-      exc.data := 0
+      exc.data := rs1
     }
     is(0x85) {
       // call

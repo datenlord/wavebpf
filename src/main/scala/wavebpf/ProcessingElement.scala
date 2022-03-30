@@ -40,12 +40,20 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
   val regfileReadInput =
     RegGroupContext(c = config.regFetch, dataType = new Bundle)
   val (insnReadToRegfile, insnReadToExec) = StreamFork2(insnBuffer.io.readRsp)
+
+  val opcode = insnReadToRegfile.payload.insn(7 downto 0)
   regfileReadInput.rs1.index := insnReadToRegfile.payload
     .insn(11 downto 8)
     .asUInt // dst
   regfileReadInput.rs2.index := insnReadToRegfile.payload
     .insn(15 downto 12)
     .asUInt // src
+
+  // Special case for JA
+  when(opcode === 0x05) {
+    regfileReadInput.rs1.index := 10 // sp
+  }
+
   regfile.io.readReq << insnReadToRegfile.translateWith(regfileReadInput)
 
   val exec = new Exec(
