@@ -688,6 +688,9 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     ctxOut.exc := stopExc
   }
 
+  // An instruction that has the `flush` flag set can re-activate a pipeline blocked by an
+  // exception. At this point there may still be some data in the bypassed pipeline registers,
+  // but it is invalid to use it. Here, we wait for the pipeline registers to empty out.
   val outStream = StreamJoin
     .arg(io.regFetch, io.insnFetch)
     .continueWhen(!io.insnFetch.payload.ctx.flush || io.bypassEmpty)
