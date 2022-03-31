@@ -76,7 +76,8 @@ object SimUtil {
 
     for ((b_, i) <- data.zipWithIndex) {
       val b = b_.toShort & 0xff
-      val shiftBytes = (addr.toInt + i) % 4
+      val shiftBytes =
+        (addr.toInt + i) % (dut.io.dataMemAxi4.config.dataWidth / 8)
       val strb = 1 << shiftBytes
       val shiftedData = BigInt(b) << (shiftBytes * 8)
       dut.io.dataMemAxi4.w.valid #= true
@@ -117,7 +118,8 @@ object SimUtil {
         assert(dut.io.dataMemAxi4.r.last.toBoolean)
       }
       val value = dut.io.dataMemAxi4.r.payload.data.toBigInt
-      val shiftedValue = value >> ((curAddr % 4) * 8).toInt
+      val shiftedValue =
+        value >> ((curAddr % (dut.io.dataMemAxi4.config.dataWidth / 8)) * 8).toInt
       val mask =
         if (size == 0) 0xffL else if (size == 1) 0xffffL else 0xffffffffL
       ret.update(i, shiftedValue & mask)

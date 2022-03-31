@@ -10,7 +10,8 @@ import wavebpf.util._
 case class WbpfConfig(
     pe: PeConfig,
     dataMemSize: Int,
-    numPe: Int
+    numPe: Int,
+    downsizeDataMemPort: Boolean
 )
 
 class CustomWbpf(config: WbpfConfig) extends Component {
@@ -24,7 +25,12 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     val excOutput = out(
       Vec(for (i <- 0 until config.numPe) yield new CpuException())
     )
-    val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
+    val dataMemAxi4 = slave(
+      Axi4(
+        if (config.downsizeDataMemPort) DataMemV2Axi4DownsizedPortConfig()
+        else DataMemV2Axi4PortConfig()
+      )
+    )
     val dataMem = slave(dataMemory.use())
     val excInterrupt = out Bool ()
   }
@@ -81,9 +87,14 @@ class CustomWbpf(config: WbpfConfig) extends Component {
   dataMemory.use().toAxi4WriteOnly() << dataMemAxi4
   dataMemory.use().toAxi4ReadOnly() << dataMemAxi4
 
-  val dmUpsizer = Axi4Upsizer(io.dataMemAxi4.config, dataMemAxi4.config, 4)
-  io.dataMemAxi4 >> dmUpsizer.io.input
-  dmUpsizer.io.output >> dataMemAxi4
+  if (config.downsizeDataMemPort) {
+    val dmUpsizer = Axi4Upsizer(io.dataMemAxi4.config, dataMemAxi4.config, 4)
+    io.dataMemAxi4 >> dmUpsizer.io.input
+    dmUpsizer.io.output >> dataMemAxi4
+  } else {
+    io.dataMemAxi4 >> dataMemAxi4
+  }
+
 }
 
 object DefaultWbpfConfig {
@@ -99,19 +110,21 @@ object DefaultWbpfConfig {
         splitAluMem = true,
         bypassMemOutput = false
       ),
-      dataMemSize = 8192,
-      numPe = 4
+      dataMemSize = 32768,
+      numPe = 4,
+      downsizeDataMemPort = false
     )
 }
 class Wbpf extends CustomWbpf(DefaultWbpfConfig()) {}
 
 class WbpfSynth extends Component {
+  val wbpf = new Wbpf()
+
   val io = new Bundle {
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
-    val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
+    val dataMemAxi4 = slave(Axi4(wbpf.io.dataMemAxi4.config))
     val excInterrupt = out Bool ()
   }
-  val wbpf = new Wbpf()
   wbpf.io.dataMem.request.setIdle()
   wbpf.io.dataMem.response.setBlocked()
   wbpf.io.mmio << io.mmio
