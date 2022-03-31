@@ -53,7 +53,9 @@ case class MemoryAccessReq(
     c: ExecConfig
 ) extends Bundle {
   val valid = Bool()
+  val writeback = Bool()
   val store = Bool()
+  val storeData = Bits(64 bits)
   val addr = UInt(32 bits)
   val rd = UInt(log2Up(c.regFetch.numRegs) bits)
   val width = MemoryAccessWidth()
@@ -72,6 +74,7 @@ case class MemoryStageInsnContext(
 case class BranchReq() extends Bundle {
   val valid = Bool()
   val isConditional = Bool()
+  val overrideAddrWithMemOutput = Bool()
   val addr = UInt(29 bits)
 }
 
@@ -190,7 +193,7 @@ case class ExecMemoryStage(
       net.provide(
         2,
         subprio,
-        stage.valid && stage.memory.rd === net.srcKey && stage.memory.valid && !stage.memory.store,
+        stage.valid && stage.memory.rd === net.srcKey && stage.memory.valid && stage.memory.writeback,
         True
       )
     }
@@ -263,17 +266,11 @@ case class ExecMemoryStage(
     maskedAluOutput
   )
 
-  val storeData = Mux[Bits](
-    sel = maskedAluOutput.insnFetch.insn(0),
-    whenTrue = maskedAluOutput.regFetch.rs2.data,
-    whenFalse = maskedAluOutput.insnFetch.imm.asBits
-  )
-
   val memReq = DataMemRequest()
   memReq.addr := maskedAluOutput.memory.addr
   memReq.write := maskedAluOutput.memory.store
   memReq.ctx.assignDontCare()
-  memReq.data := storeData
+  memReq.data := maskedAluOutput.memory.storeData
   memReq.width := maskedAluOutput.memory.width
   memReq.precomputedStrbValid := False
   memReq.precomputedStrb.assignDontCare()
@@ -291,7 +288,7 @@ case class ExecMemoryStage(
   outData.regFetch := maskedAluOutputStaged.regFetch
 
   val shouldWriteback =
-    maskedAluOutputStaged.memory.valid && !maskedAluOutputStaged.memory.store
+    maskedAluOutputStaged.memory.valid && maskedAluOutputStaged.memory.writeback
   outData.regWritebackValid := shouldWriteback
     .mux(
       (False, maskedAluOutputStaged.regWritebackValid),
@@ -303,6 +300,9 @@ case class ExecMemoryStage(
       (True, writebackOverride)
     )
   outData.br := maskedAluOutputStaged.br
+  when(maskedAluOutputStaged.br.overrideAddrWithMemOutput) {
+    outData.br.addr := (io.dataMem.response.payload.data.asUInt >> 3).resized
+  }
 
   val dmRspAlwaysValid = Stream(DataMemResponse())
   dmRspAlwaysValid.valid := True
@@ -379,10 +379,19 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     (False, rs2.resize(32 bits)),
     (True, rs1.resize(32 bits))
   ) + offset32
+  memory.writeback := !isStore
+
+  val storeData = Mux[Bits](
+    sel = io.insnFetch.insn(0),
+    whenTrue = rs2.asBits,
+    whenFalse = imm.asBits
+  )
+  memory.storeData := storeData
 
   val br = BranchReq()
   br.valid := False
   br.isConditional := True
+  br.overrideAddrWithMemOutput := False
   br.addr := io.insnFetch.payload.addr.resize(29 bits) + 1 + offset32.resize(
     29 bits
   )
@@ -540,10 +549,37 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       br.valid := True
       br.isConditional := False
 
+      val newSp = rs1 + imm
+
       // SP adjustment
       regWritebackValid := True
       regWritebackData.index := 10
-      regWritebackData.data := (rs1 + imm).asBits
+      regWritebackData.data := newSp.asBits
+
+      when(rs2Index === 1) {
+      // CISC-style RETURN
+        val memoryOverride = MemoryAccessReq(c)
+        memoryOverride.valid := True
+        memoryOverride.writeback := False
+        memoryOverride.store := False
+        memoryOverride.storeData.assignDontCare()
+        memoryOverride.addr := rs1.resized
+        memoryOverride.rd.assignDontCare()
+        memoryOverride.width := MemoryAccessWidth.W8
+        memory := memoryOverride
+        br.overrideAddrWithMemOutput := True
+      } elsewhen(rs2Index === 2) {
+        // CISC-style CALL
+        val memoryOverride = MemoryAccessReq(c)
+        memoryOverride.valid := True
+        memoryOverride.writeback := False
+        memoryOverride.store := True
+        memoryOverride.storeData := (io.insnFetch.payload.addr << 3).asBits.resized
+        memoryOverride.addr := newSp.resized
+        memoryOverride.rd.assignDontCare()
+        memoryOverride.width := MemoryAccessWidth.W8
+        memory := memoryOverride
+      }
     }
     is(0x15, 0x1d) {
       // jeq
@@ -653,9 +689,8 @@ case class ExecAluStage(c: ExecConfig) extends Component {
         br.addr
       )
     )*/
+    brOverride.assignDontCare()
     brOverride.valid := False
-    brOverride.addr.assignDontCare()
-    brOverride.isConditional.assignDontCare()
   } elsewhen (
     !br.valid &&
       io.insnFetch.payload.ctx.prediction.valid &&
@@ -674,6 +709,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     brOverride.valid := True
     brOverride.addr := sequentialNextPc.resized
     brOverride.isConditional := False
+    brOverride.overrideAddrWithMemOutput := False
   } otherwise {
     brOverride := br
   }
