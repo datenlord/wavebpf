@@ -74,6 +74,7 @@ case class MemoryStageInsnContext(
 case class BranchReq() extends Bundle {
   val valid = Bool()
   val isConditional = Bool()
+  val writeBtb = Bool()
   val overrideAddrWithMemOutput = Bool()
   val addr = UInt(29 bits)
 }
@@ -144,7 +145,9 @@ case class Exec(c: ExecConfig) extends Component {
   pcUpdateReq.pc := memStage.io.output.payload.br.addr
   pcUpdateReq.flush := True
   pcUpdateReq.flushReason := PcFlushReasonCode.BRANCH_RESOLVE
-  pcUpdateReq.branchSourceValid := Bool(c.useBtbForConditionalBranches) || !memStage.io.output.payload.br.isConditional
+  pcUpdateReq.branchSourceValid := (Bool(
+    c.useBtbForConditionalBranches
+  ) || !memStage.io.output.payload.br.isConditional) && memStage.io.output.payload.br.writeBtb
   pcUpdateReq.branchSource := memStage.io.output.payload.insnFetch.addr.resized
   memOutputFlow
     .throwWhen(!memStage.io.output.payload.br.valid)
@@ -391,6 +394,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   val br = BranchReq()
   br.valid := False
   br.isConditional := True
+  br.writeBtb := True
   br.overrideAddrWithMemOutput := False
   br.addr := io.insnFetch.payload.addr.resize(29 bits) + 1 + offset32.resize(
     29 bits
@@ -434,6 +438,8 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   val lddwHigherHalf = LddwHigherHalfState()
   lddwHigherHalf.valid := lddwHigherHalfReg.valid & !io.insnFetch.payload.ctx.flush
   lddwHigherHalf.assignUnassignedByName(lddwHigherHalfReg)
+
+  val sequentialNextPc = io.insnFetch.payload.addr + 1
 
   def reportBadInsn() {
     exc.valid := True
@@ -557,7 +563,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       regWritebackData.data := newSp.asBits
 
       when(rs2Index === 1) {
-      // CISC-style RETURN
+        // CISC-style RETURN
         val memoryOverride = MemoryAccessReq(c)
         memoryOverride.valid := True
         memoryOverride.writeback := False
@@ -567,14 +573,15 @@ case class ExecAluStage(c: ExecConfig) extends Component {
         memoryOverride.rd.assignDontCare()
         memoryOverride.width := MemoryAccessWidth.W8
         memory := memoryOverride
+        br.writeBtb := False
         br.overrideAddrWithMemOutput := True
-      } elsewhen(rs2Index === 2) {
+      } elsewhen (rs2Index === 2) {
         // CISC-style CALL
         val memoryOverride = MemoryAccessReq(c)
         memoryOverride.valid := True
         memoryOverride.writeback := False
         memoryOverride.store := True
-        memoryOverride.storeData := (io.insnFetch.payload.addr << 3).asBits.resized
+        memoryOverride.storeData := (sequentialNextPc << 3).asBits.resized
         memoryOverride.addr := newSp.resized
         memoryOverride.rd.assignDontCare()
         memoryOverride.width := MemoryAccessWidth.W8
@@ -675,9 +682,10 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   // Do not issue a branch if our prediction is correct
   val brOverride = BranchReq()
-  val sequentialNextPc = io.insnFetch.payload.addr + 1
   when(
     br.valid &&
+      // XXX: Here we always trigger a branch miss for function returns - maybe there's a better way?
+      !br.overrideAddrWithMemOutput &&
       io.insnFetch.payload.ctx.prediction.valid &&
       io.insnFetch.payload.ctx.prediction.predictedTarget === br.addr.resized
   ) {
@@ -709,6 +717,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     brOverride.valid := True
     brOverride.addr := sequentialNextPc.resized
     brOverride.isConditional := False
+    brOverride.writeBtb := True
     brOverride.overrideAddrWithMemOutput := False
   } otherwise {
     brOverride := br
