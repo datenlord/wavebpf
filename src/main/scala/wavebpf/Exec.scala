@@ -54,6 +54,7 @@ case class MemoryAccessReq(
 ) extends Bundle {
   val valid = Bool()
   val writeback = Bool()
+  val writebackShiftRight32 = Bool()
   val store = Bool()
   val storeData = Bits(64 bits)
   val addr = UInt(32 bits)
@@ -285,7 +286,11 @@ case class ExecMemoryStage(
 
   val writebackOverride = RegContext(c.regFetch, Bits(64 bits))
   writebackOverride.index := maskedAluOutputStaged.memory.rd
-  writebackOverride.data := io.dataMem.response.payload.data
+  writebackOverride.data := maskedAluOutputStaged.memory.writebackShiftRight32
+    .mux(
+      True -> (io.dataMem.response.payload.data >> 32).resize(64 bits),
+      False -> io.dataMem.response.payload.data
+    )
 
   outData.insnFetch := maskedAluOutputStaged.insnFetch
   outData.regFetch := maskedAluOutputStaged.regFetch
@@ -383,6 +388,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     (True, rs1.resize(32 bits))
   ) + offset32
   memory.writeback := !isStore
+  memory.writebackShiftRight32 := False
 
   val storeData = Mux[Bits](
     sel = io.insnFetch.insn(0),
@@ -555,33 +561,37 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       br.valid := True
       br.isConditional := False
 
-      val newSp = rs1 + imm
-
-      // SP adjustment
-      regWritebackValid := True
-      regWritebackData.index := 10
-      regWritebackData.data := newSp.asBits
-
       when(rs2Index === 1) {
         // CISC-style RETURN
         val memoryOverride = MemoryAccessReq(c)
         memoryOverride.valid := True
-        memoryOverride.writeback := False
+        memoryOverride.writeback := True
+        memoryOverride.writebackShiftRight32 := True
+        memoryOverride.rd := 10
         memoryOverride.store := False
         memoryOverride.storeData.assignDontCare()
         memoryOverride.addr := rs1.resized
-        memoryOverride.rd.assignDontCare()
         memoryOverride.width := MemoryAccessWidth.W8
         memory := memoryOverride
         br.writeBtb := False
         br.overrideAddrWithMemOutput := True
       } elsewhen (rs2Index === 2) {
         // CISC-style CALL
+        val newSp = rs1 + imm
+        regWritebackValid := True
+        regWritebackData.index := 10
+        regWritebackData.data := newSp.asBits
+
         val memoryOverride = MemoryAccessReq(c)
         memoryOverride.valid := True
         memoryOverride.writeback := False
+        memoryOverride.writebackShiftRight32.assignDontCare()
         memoryOverride.store := True
-        memoryOverride.storeData := (sequentialNextPc << 3).asBits.resized
+
+        // Current SP ## Return PC
+        memoryOverride.storeData := rs1.resize(
+          32 bits
+        ) ## (sequentialNextPc << 3).asBits.resize(32 bits)
         memoryOverride.addr := newSp.resized
         memoryOverride.rd.assignDontCare()
         memoryOverride.width := MemoryAccessWidth.W8
