@@ -29,10 +29,17 @@ case class Regfetch(c: RegfetchConfig) extends Component {
     val readReq = slave Stream (RegGroupContext(c, new Bundle))
     val readRsp = master Stream (RegGroupContext(c, Bits(64 bits)))
     val writeReq = slave Flow (RegContext(c, Bits(64 bits)))
+
+    val replicaReadReq = slave Stream (UInt(log2Up(c.numRegs) bits))
+    val replicaReadRsp = master Stream (Bits(64 bits))
   }
 
   val bank0 = Mem(Bits(64 bits), c.numRegs)
   val bank1 = Mem(Bits(64 bits), c.numRegs)
+  val replica = Mem(Bits(64 bits), c.numRegs)
+  io.replicaReadRsp << replica.streamReadSync(
+    io.replicaReadReq
+  ).pipelined(m2s = true, s2m = true)
 
   bank0.write(
     enable = io.writeReq.valid,
@@ -40,6 +47,11 @@ case class Regfetch(c: RegfetchConfig) extends Component {
     data = io.writeReq.payload.data
   )
   bank1.write(
+    enable = io.writeReq.valid,
+    address = io.writeReq.payload.index,
+    data = io.writeReq.payload.data
+  )
+  replica.write(
     enable = io.writeReq.valid,
     address = io.writeReq.payload.index,
     data = io.writeReq.payload.data

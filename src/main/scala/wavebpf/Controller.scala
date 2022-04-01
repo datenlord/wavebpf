@@ -8,6 +8,7 @@ import spinal.lib.bus.amba4.axilite._
 
 case class Controller(
     insnBufferConfig: InsnBufferConfig,
+    regfetchConfig: RegfetchConfig,
     context: PeContextData
 ) extends Component {
   val io = new Bundle {
@@ -17,6 +18,10 @@ case class Controller(
     val excReport = in(new CpuException())
     val excAck = out(Bool())
     val commitFire = in(Bool())
+    val rfReplicaReadReq = master Stream (UInt(4 bits))
+    val rfReplicaReadRsp = slave Stream (Bits(64 bits))
+    val rfWriteOverride =
+      master Flow (RegContext(regfetchConfig, Bits(64 bits)))
   }
 
   val perfCounter_cycles = Reg(UInt(64 bits)) init (0)
@@ -31,7 +36,7 @@ case class Controller(
   io.excAck := excAckReg
 
   val refillCounter = Reg(UInt(insnBufferConfig.addrWidth bits)) init (0)
-  val refillBuffer = Reg(Bits(32 bits))
+  val buffer = Reg(Bits(32 bits))
   io.pcUpdater.payload.assignDontCare()
   io.pcUpdater.valid := False
 
@@ -55,6 +60,8 @@ case class Controller(
     io.pcUpdater.payload.branchSourceValid := False
     io.pcUpdater.payload.branchSource.assignDontCare()
   }
+
+  io.rfWriteOverride.setIdle()
 
   val writeFsm = new StateMachine {
     val waitForAw: State = new State with EntryPoint {
@@ -81,10 +88,10 @@ case class Controller(
               flushPc(PcFlushReasonCode.STOP)
             }
             is(0x02) {
-              refillBuffer := mmio.w.payload.data
+              buffer := mmio.w.payload.data
             }
             is(0x04) {
-              val data = mmio.w.payload.data ## refillBuffer
+              val data = mmio.w.payload.data ## buffer
               io.refill.valid := True
               io.refill.payload.addr := refillCounter
               io.refill.payload.insn := data
@@ -102,6 +109,13 @@ case class Controller(
             is(0x10) {
               perfCounter_cycles := 0
               perfCounter_commits := 0
+            }
+            is(M"00001----1") {
+              // Mapped registers
+              mmio.r.valid := False
+              io.rfWriteOverride.valid := True
+              io.rfWriteOverride.payload.index := writeAddr(4 downto 1)
+              io.rfWriteOverride.payload.data := mmio.w.payload.data ## buffer
             }
           }
           goto(sendWriteRsp)
@@ -122,7 +136,12 @@ case class Controller(
   val arSnapshot = Reg(AxiLite4Ax(MMIOBusConfigV2()))
   val readAddr = arSnapshot.addr(11 downto 2)
 
+  io.rfReplicaReadReq.setIdle()
+  io.rfReplicaReadRsp.ready := mmio.r.ready
+
   val readFsm = new StateMachine {
+    val mappedRegReadWait = Reg(Bool()) init (False)
+
     val waitForAr: State = new State with EntryPoint {
       whenIsActive {
         when(mmio.ar.valid) {
@@ -195,11 +214,37 @@ case class Controller(
           is(0x13) {
             mmio.r.payload.data := perfCounter_commits(63 downto 32).asBits
           }
+          is(M"00001-----") {
+            // Mapped registers
+            mmio.r.valid := False
+            when(mappedRegReadWait) {
+              when(io.rfReplicaReadRsp.valid) {
+                mmio.r.valid := True
+                when(readAddr(0)) {
+                  // upper half
+                  mmio.r.payload.data := io.rfReplicaReadRsp.payload(
+                    63 downto 32
+                  )
+                } otherwise {
+                  mmio.r.payload.data := io.rfReplicaReadRsp.payload(
+                    31 downto 0
+                  )
+                }
+              }
+            } otherwise {
+              io.rfReplicaReadReq.valid := True
+              io.rfReplicaReadReq.payload := readAddr(4 downto 1)
+              when(io.rfReplicaReadReq.ready) {
+                mappedRegReadWait := True
+              }
+            }
+          }
           default {
             mmio.r.payload.data := 0
           }
         }
-        when(mmio.r.ready) {
+        when(mmio.r.fire) {
+          mappedRegReadWait := False
           goto(waitForAr)
         }
       }

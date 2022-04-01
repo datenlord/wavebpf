@@ -12,6 +12,10 @@ class SimMemAddSpec extends AnyFunSuite {
     import SimUtil._
     runWithAllBackends(new Wbpf) { dut =>
       initDutForTesting(dut)
+      var cycles = 0L
+      dut.clockDomain.onSamplings {
+        cycles += 1
+      }
 
       val firstExc = dut.io.excOutput.head
 
@@ -84,6 +88,31 @@ class SimMemAddSpec extends AnyFunSuite {
 
       println("Running check.")
       assert(dmReadOnce(dut, 0x20) == BigInt("5451", 16))
+
+      // R1 read test
+      {
+        val startCycles = cycles
+        assert(mmioRead(dut, 0x1088) == 0x20)
+        assert(mmioRead(dut, 0x108c) == 0x0)
+        val endCycles = cycles
+        println(
+          "Reading a 64-bit register took " + (endCycles - startCycles) + " cycles."
+        )
+      }
+
+      // R1 write test
+      {
+        val startCycles = cycles
+        mmioWrite(dut, 0x1008, 0x30) // This is not 0x1088 but 0x1008 - buffer
+        mmioWrite(dut, 0x108c, 0xc)
+        val endCycles = cycles
+        println(
+          "Writing a 64-bit register took " + (endCycles - startCycles) + " cycles."
+        )
+      }
+      assert(mmioRead(dut, 0x1088) == 0x30)
+      assert(mmioRead(dut, 0x108c) == 0xc)
+
       println("Check passed.")
     }
   }

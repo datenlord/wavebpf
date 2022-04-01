@@ -28,7 +28,7 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
   }
 
   val controller =
-    new Controller(insnBufferConfig = config.insnBuffer, context = context)
+    new Controller(insnBufferConfig = config.insnBuffer, regfetchConfig = config.regFetch, context = context)
   controller.io.mmio << io.mmio
   controller.io.pcUpdater >> pcUpdater.getUpdater(1)
 
@@ -37,6 +37,9 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
   pcmgr.io.stream >> insnBuffer.io.readReq
 
   val regfile = new Regfetch(c = config.regFetch)
+
+  controller.io.rfReplicaReadReq >> regfile.io.replicaReadReq
+  controller.io.rfReplicaReadRsp << regfile.io.replicaReadRsp
 
   val regfileReadInput =
     RegGroupContext(c = config.regFetch, dataType = new Bundle)
@@ -72,7 +75,11 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
   exec.io.insnFetch << (if (config.regFetch.isAsync) insnReadToExec
                         else insnReadToExec.stage())
 
-  exec.io.regWriteback >> regfile.io.writeReq
+  when(controller.io.rfWriteOverride.valid) {
+    regfile.io.writeReq << controller.io.rfWriteOverride
+  } otherwise {
+    regfile.io.writeReq << exec.io.regWriteback
+  }
 
   exec.io.dataMem.request >> io.dm.request
   exec.io.dataMem.response << io.dm.response
