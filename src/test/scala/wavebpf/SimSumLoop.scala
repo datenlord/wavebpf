@@ -53,7 +53,7 @@ class SimSumLoopSpec extends AnyFunSuite {
       assert(firstExc.code.toEnum == CpuExceptionCode.EXIT)
 
       assert(mmioRead(dut, 0x1018) == 0x88) // pc
-      assert(mmioRead(dut, 0x1020) == 5) // code
+      assert(mmioRead(dut, 0x1020) == (BigInt(5) | (BigInt(1) << 31))) // code
 
       println("Code execution completed.")
       println("Running check.")

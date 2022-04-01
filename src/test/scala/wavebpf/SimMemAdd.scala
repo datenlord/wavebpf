@@ -63,7 +63,7 @@ class SimMemAddSpec extends AnyFunSuite {
       assert(firstExc.code.toEnum == CpuExceptionCode.EXIT)
 
       assert(dut.io.excInterrupt.toBoolean)
-      mmioWrite(dut, 0x1020, 0x0)
+      mmioWrite(dut, 0x1020, 0x0) // ack
       assert(!dut.io.excInterrupt.toBoolean)
 
       assert(mmioRead(dut, 0x1018) == 0x38) // pc
@@ -71,7 +71,7 @@ class SimMemAddSpec extends AnyFunSuite {
 
       // Test STOP command
       mmioWrite(dut, 0x1004, 0x00)
-      while (mmioRead(dut, 0x1020) != 7) {
+      while (mmioRead(dut, 0x1020) != (BigInt(7) | (BigInt(1) << 31))) {
         println("Wait for stop...")
         dut.clockDomain.waitSampling()
       }

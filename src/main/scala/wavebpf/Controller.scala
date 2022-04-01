@@ -154,9 +154,11 @@ case class Controller(
             )
           }
           is(0x08) {
-            mmio.r.payload.data := io.excReport.valid.mux(
-              (False, U(0, 32 bits).asBits),
-              (True, io.excReport.code.asBits.resize(32 bits))
+            val hasIntr =
+              io.excReport.valid && (excAckReg =/= io.excReport.generation)
+            mmio.r.payload.data := hasIntr.asBits ## io.excReport.valid.mux(
+              (False, U(0, 31 bits).asBits),
+              (True, io.excReport.code.asBits.resize(31 bits))
             )
           }
           is(0x0a) {
