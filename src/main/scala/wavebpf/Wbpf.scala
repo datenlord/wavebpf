@@ -138,51 +138,62 @@ class WbpfSynthHighFreq(config: WbpfConfig = DefaultWbpfConfig())
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
     val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
     val excInterrupt = out Bool ()
-    val logic_clk = out Bool ()
+    val logic_clk = in Bool ()
   }
 
-  val topDomain = ClockDomain.current
-  val dividedClock = Reg(Bool()) init (False)
-  dividedClock := !dividedClock
+  val mmioDomain = ClockDomain.external("mmio")
+  val dmDomain = ClockDomain.external("dm")
+  val logicDomain = ClockDomain.current
 
-  val dividedReset = Reg(Bool()) init (True)
-  when(dividedClock) {
-    dividedReset := False
-  }
+  val wbpf = new WbpfSynth(config)
+  assert(wbpf.io.dataMemAxi4.config.dataWidth == 64)
 
-  val logicDomain = ClockDomain.internal("logic")
-  logicDomain.clock := dividedClock
-  logicDomain.reset := dividedReset
-
-  io.logic_clk := dividedClock
-
-  val logicArea = new ClockingArea(logicDomain) {
-    val wbpf = new WbpfSynth(config)
-    assert(wbpf.io.dataMemAxi4.config.dataWidth == 64)
-  }
-  logicArea.wbpf.io.mmio.ar << io.mmio.ar.queue(4, topDomain, logicDomain)
-  logicArea.wbpf.io.mmio.aw << io.mmio.aw.queue(4, topDomain, logicDomain)
-  logicArea.wbpf.io.mmio.w << io.mmio.w.queue(4, topDomain, logicDomain)
-  io.mmio.r << logicArea.wbpf.io.mmio.r.queue(4, logicDomain, topDomain)
-  io.mmio.b << logicArea.wbpf.io.mmio.b.queue(4, logicDomain, topDomain)
-
-  io.excInterrupt := logicArea.wbpf.io.excInterrupt
-
-  val dmUpsizer =
-    Axi4Upsizer(io.dataMemAxi4.config, logicArea.wbpf.io.dataMemAxi4.config, 4)
-  io.dataMemAxi4 >> dmUpsizer.io.input
-  val dmCC = Axi4CC(
-    axiConfig = dmUpsizer.io.output.config,
-    inputCd = topDomain,
-    outputCd = logicDomain,
-    arFifoSize = 4,
-    awFifoSize = 4,
-    rFifoSize = 4,
-    wFifoSize = 4,
-    bFifoSize = 4
+  wbpf.io.mmio.ar << io.mmio.ar.queue(
+    4,
+    mmioDomain,
+    logicDomain
   )
-  dmUpsizer.io.output >> dmCC.io.input
-  dmCC.io.output >> logicArea.wbpf.io.dataMemAxi4
+  wbpf.io.mmio.aw << io.mmio.aw.queue(
+    4,
+    mmioDomain,
+    logicDomain
+  )
+  wbpf.io.mmio.w << io.mmio.w.queue(
+    4,
+    mmioDomain,
+    logicDomain
+  )
+  io.mmio.r << wbpf.io.mmio.r
+    .queue(4, logicDomain, mmioDomain)
+  io.mmio.b << wbpf.io.mmio.b
+    .queue(4, logicDomain, mmioDomain)
+
+  val mmioArea = new ClockingArea(mmioDomain) {
+    io.excInterrupt := BufferCC(wbpf.io.excInterrupt, False)
+  }
+
+  val dmArea = new ClockingArea(dmDomain) {
+    val dmUpsizer =
+      Axi4Upsizer(
+        io.dataMemAxi4.config,
+        wbpf.io.dataMemAxi4.config,
+        4
+      )
+
+    io.dataMemAxi4 >> dmUpsizer.io.input
+    val dmCC = Axi4CC(
+      axiConfig = dmUpsizer.io.output.config,
+      inputCd = dmDomain,
+      outputCd = logicDomain,
+      arFifoSize = 4,
+      awFifoSize = 4,
+      rFifoSize = 4,
+      wFifoSize = 4,
+      bFifoSize = 4
+    )
+    dmUpsizer.io.output >> dmCC.io.input
+    dmCC.io.output >> wbpf.io.dataMemAxi4
+  }
 }
 
 object WbpfVerilog {
