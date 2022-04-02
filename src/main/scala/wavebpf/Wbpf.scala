@@ -104,11 +104,11 @@ object DefaultWbpfConfig {
         insnBuffer = InsnBufferConfig(
           addrWidth = 11,
           useBtb = true,
-          btbSize = 8
+          btbSize = 12
         ),
         regFetch = RegfetchConfig(),
         splitAluMem = true,
-        bypassMemOutput = false
+        bypassMemOutput = true
       ),
       dataMemSize = 32768,
       numPe = 4,
