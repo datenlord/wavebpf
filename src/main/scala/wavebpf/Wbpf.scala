@@ -117,8 +117,8 @@ object DefaultWbpfConfig {
 }
 class Wbpf extends CustomWbpf(DefaultWbpfConfig()) {}
 
-class WbpfSynth extends Component {
-  val wbpf = new Wbpf()
+class WbpfSynth(config: WbpfConfig = DefaultWbpfConfig()) extends Component {
+  val wbpf = new CustomWbpf(config)
 
   val io = new Bundle {
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
@@ -132,19 +132,20 @@ class WbpfSynth extends Component {
   io.excInterrupt := wbpf.io.excInterrupt
 }
 
-class WbpfSynthHighFreq extends Component {
+class WbpfSynthHighFreq(config: WbpfConfig = DefaultWbpfConfig())
+    extends Component {
   val io = new Bundle {
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
     val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
     val excInterrupt = out Bool ()
-    val logic_clk = out Bool()
+    val logic_clk = out Bool ()
   }
 
   val topDomain = ClockDomain.current
-  val dividedClock = Reg(Bool()) init(False)
+  val dividedClock = Reg(Bool()) init (False)
   dividedClock := !dividedClock
 
-  val dividedReset = Reg(Bool()) init(True)
+  val dividedReset = Reg(Bool()) init (True)
   when(dividedClock) {
     dividedReset := False
   }
@@ -156,7 +157,7 @@ class WbpfSynthHighFreq extends Component {
   io.logic_clk := dividedClock
 
   val logicArea = new ClockingArea(logicDomain) {
-    val wbpf = new WbpfSynth()
+    val wbpf = new WbpfSynth(config)
     assert(wbpf.io.dataMemAxi4.config.dataWidth == 64)
   }
   logicArea.wbpf.io.mmio.ar << io.mmio.ar.queue(4, topDomain, logicDomain)
