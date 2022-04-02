@@ -12,11 +12,13 @@ object WbpfExt {
       val output = Stream(stream.payloadType)
       output << stream
 
-      assert(!(!stream.valid && rValid), "Stream transaction disappeared")
+      val stack = Thread.currentThread().getStackTrace().mkString
+
+      assert(!(!stream.valid && rValid), "Stream transaction disappeared: " + stack)
       if (checkPayloadInvariance) {
         assert(
           !rValid || rData === stream.payload,
-          "Stream transaction payload changed"
+          "Stream transaction payload changed: " + stack
         )
       }
 

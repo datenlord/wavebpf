@@ -83,7 +83,7 @@ case class BranchReq() extends Bundle {
 
 case class Exec(c: ExecConfig) extends Component {
   val io = new Bundle {
-    val regFetch = slave Stream (RegGroupContext(c.regFetch, Bits(64 bits)))
+    val regFetch = in(RegGroupContext(c.regFetch, Bits(64 bits)))
     val regWriteback = master Flow (RegContext(c.regFetch, Bits(64 bits)))
     val dataMem = master(DataMemV2Port())
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
@@ -119,12 +119,10 @@ case class Exec(c: ExecConfig) extends Component {
 
   val aluStage = new ExecAluStage(c)
   aluStage.io.bypassEmpty := rs1Bypass.empty && rs2Bypass.empty
-  io.regFetch
-    .translateWith(rfOverride)
-    .continueWhen(
-      !rs1MemStallBypass.bypassed && !rs2MemStallBypass.bypassed
-    ) >> aluStage.io.regFetch
-  io.insnFetch >> aluStage.io.insnFetch
+  aluStage.io.regFetch := rfOverride
+  io.insnFetch.continueWhen(
+    !rs1MemStallBypass.bypassed && !rs2MemStallBypass.bypassed
+  ) >> aluStage.io.insnFetch
   val memStage =
     new ExecMemoryStage(
       c,
@@ -135,9 +133,12 @@ case class Exec(c: ExecConfig) extends Component {
 
   val memOutputFlow = memStage.io.output.toFlow
 
-  memStage.io.aluStage << aluStage.io.output.assertProps(checkPayloadInvariance = true)
-  memStage.io.dataMem.request.assertProps(checkPayloadInvariance = true) >> io.dataMem.request
-  memStage.io.dataMem.response << io.dataMem.response.assertProps(checkPayloadInvariance = true)
+  memStage.io.aluStage << aluStage.io.output
+    .assertProps(checkPayloadInvariance = true)
+  memStage.io.dataMem.request
+    .assertProps(checkPayloadInvariance = true) >> io.dataMem.request
+  memStage.io.dataMem.response << io.dataMem.response
+    .assertProps(checkPayloadInvariance = true)
   memOutputFlow
     .throwWhen(!memStage.io.output.payload.regWritebackValid)
     .translateWith(memStage.io.output.payload.regWriteback) >> io.regWriteback
@@ -348,7 +349,7 @@ case class ExecMemoryStage(
 
 case class ExecAluStage(c: ExecConfig) extends Component {
   val io = new Bundle {
-    val regFetch = slave Stream (RegGroupContext(c.regFetch, Bits(64 bits)))
+    val regFetch = in(RegGroupContext(c.regFetch, Bits(64 bits)))
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
     val output = master Stream (AluStageInsnContext(c))
     val bypassEmpty = in Bool ()
@@ -356,10 +357,10 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   val opcode = io.insnFetch.payload.insn(7 downto 0)
   val rdIndex = io.insnFetch.payload.insn(11 downto 8).asUInt
-  val rs2Index = io.regFetch.payload.rs2.index
+  val rs2Index = io.regFetch.rs2.index
   val imm = io.insnFetch.payload.imm
-  val rs1 = io.regFetch.payload.rs1.data.asUInt
-  val rs2 = io.regFetch.payload.rs2.data.asUInt
+  val rs1 = io.regFetch.rs1.data.asUInt
+  val rs2 = io.regFetch.rs2.data.asUInt
   val offset32 =
     io.insnFetch.payload.insn(31 downto 16).asSInt.resize(32).asUInt
 
@@ -756,8 +757,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   // An instruction that has the `flush` flag set can re-activate a pipeline blocked by an
   // exception. At this point there may still be some data in the bypassed pipeline registers,
   // but it is invalid to use it. Here, we wait for the pipeline registers to empty out.
-  val outStream = StreamJoin
-    .arg(io.regFetch, io.insnFetch)
+  val outStream = io.insnFetch
     .continueWhen(!io.insnFetch.payload.ctx.flush || io.bypassEmpty)
     .translateWith(ctxOut)
 

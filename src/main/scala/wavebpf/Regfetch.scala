@@ -4,8 +4,7 @@ import spinal.core._
 import spinal.lib._
 
 case class RegfetchConfig(
-    numRegs: Int = 16,
-    isAsync: Boolean = true
+    numRegs: Int = 16
 );
 
 case class RegContext[T <: Data](
@@ -26,8 +25,8 @@ case class RegGroupContext[T <: Data](
 
 case class Regfetch(c: RegfetchConfig) extends Component {
   val io = new Bundle {
-    val readReq = slave Stream (RegGroupContext(c, new Bundle))
-    val readRsp = master Stream (RegGroupContext(c, Bits(64 bits)))
+    val readReq = slave Flow (RegGroupContext(c, new Bundle))
+    val readRsp = master Flow (RegGroupContext(c, Bits(64 bits)))
     val writeReq = slave Flow (RegContext(c, Bits(64 bits)))
 
     val replicaReadReq = slave Stream (UInt(log2Up(c.numRegs) bits))
@@ -37,9 +36,11 @@ case class Regfetch(c: RegfetchConfig) extends Component {
   val bank0 = Mem(Bits(64 bits), c.numRegs)
   val bank1 = Mem(Bits(64 bits), c.numRegs)
   val replica = Mem(Bits(64 bits), c.numRegs)
-  io.replicaReadRsp << replica.streamReadSync(
-    io.replicaReadReq
-  ).pipelined(m2s = true, s2m = true)
+  io.replicaReadRsp << replica
+    .streamReadSync(
+      io.replicaReadReq
+    )
+    .pipelined(m2s = true, s2m = true)
 
   bank0.write(
     enable = io.writeReq.valid,
@@ -68,38 +69,24 @@ case class Regfetch(c: RegfetchConfig) extends Component {
     )
   }*/
 
-  val readReqStaged = if (c.isAsync) io.readReq else io.readReq.stage()
-  val readData = if (c.isAsync) {
-    (
-      bank0.readAsync(
-        address = io.readReq.rs1.index,
-        readUnderWrite = writeFirst
-      ),
-      bank1.readAsync(
-        address = io.readReq.rs2.index,
-        readUnderWrite = writeFirst
-      )
+  val readData = (
+    bank0.readAsync(
+      address = io.readReq.rs1.index,
+      readUnderWrite = writeFirst
+    ),
+    bank1.readAsync(
+      address = io.readReq.rs2.index,
+      readUnderWrite = writeFirst
     )
-  } else {
-    (
-      bank0.readSync(
-        address = io.readReq.rs1.index,
-        readUnderWrite = writeFirst
-      ),
-      bank1.readSync(
-        address = io.readReq.rs2.index,
-        readUnderWrite = writeFirst
-      )
-    )
-  }
+  )
 
   val rspGroup = RegGroupContext(c, Bits(64 bits))
 
-  rspGroup.rs1.index := readReqStaged.payload.rs1.index
+  rspGroup.rs1.index := io.readReq.payload.rs1.index
   rspGroup.rs1.data := readData._1
 
-  rspGroup.rs2.index := readReqStaged.payload.rs2.index
+  rspGroup.rs2.index := io.readReq.payload.rs2.index
   rspGroup.rs2.data := readData._2
 
-  io.readRsp << readReqStaged.translateWith(rspGroup)
+  io.readRsp << io.readReq.translateWith(rspGroup)
 }
