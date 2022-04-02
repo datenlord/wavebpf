@@ -2,6 +2,7 @@ package wavebpf
 
 import spinal.core._
 import spinal.lib._
+import WbpfExt._
 
 case class InsnBufferConfig(
     addrWidth: Int,
@@ -60,7 +61,7 @@ case class InsnBuffer(c: InsnBufferConfig) extends Component {
   rsp.addr := readReqStaged.payload.addr
   rsp.insn := readData.payload
   rsp.ctx := readReqStaged.payload.ctx
-  io.readRsp << StreamJoin.arg(readReqStaged, readData).translateWith(rsp)
+  io.readRsp << StreamJoin.arg(readReqStaged, readData).translateWith(rsp).assertProps(checkPayloadInvariance = true)
 
   mem.write(
     enable = io.refill.valid,

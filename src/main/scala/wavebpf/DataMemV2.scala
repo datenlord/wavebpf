@@ -6,6 +6,7 @@ import scala.collection.mutable.ArrayBuffer
 import spinal.lib.bus.wishbone._
 import spinal.lib.bus.amba4.axi._
 import spinal.lib.fsm._
+import WbpfExt._
 
 case class DataMemRequest() extends Bundle {
   val write = Bool()
@@ -203,14 +204,14 @@ object DataMemV2Port {
       x._1.request.translateWith(payload)
     })
     val arbStream = new StreamArbiterFactory().roundRobin.on(annotatedReq)
-    output.request << arbStream
+    output.request << arbStream.assertProps(checkPayloadInvariance = true)
     val rspVec = Vec(inputs.map(_.response))
     val demux = StreamDemux(
       output.response,
       output.response.payload.ctx.resize(log2Up(inputs.length) bits),
       rspVec.length
     )
-    rspVec.zip(demux).foreach(x => x._1 << x._2)
+    rspVec.zip(demux).foreach(x => x._1 << x._2.assertProps(checkPayloadInvariance = true))
   }
 }
 

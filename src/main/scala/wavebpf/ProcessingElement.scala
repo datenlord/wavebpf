@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.amba4.axi._
 import spinal.lib.bus.amba4.axilite._
+import WbpfExt._
 
 case class PeConfig(
     insnBuffer: InsnBufferConfig,
@@ -38,8 +39,8 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
 
   val regfile = new Regfetch(c = config.regFetch)
 
-  controller.io.rfReplicaReadReq >> regfile.io.replicaReadReq
-  controller.io.rfReplicaReadRsp << regfile.io.replicaReadRsp
+  controller.io.rfReplicaReadReq.assertProps(checkPayloadInvariance = true) >> regfile.io.replicaReadReq
+  controller.io.rfReplicaReadRsp << regfile.io.replicaReadRsp.assertProps(checkPayloadInvariance = true)
 
   val regfileReadInput =
     RegGroupContext(c = config.regFetch, dataType = new Bundle)
@@ -58,7 +59,7 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
     regfileReadInput.rs1.index := 10 // sp
   }
 
-  regfile.io.readReq << insnReadToRegfile.translateWith(regfileReadInput)
+  regfile.io.readReq << insnReadToRegfile.translateWith(regfileReadInput).assertProps(checkPayloadInvariance = true)
 
   val exec = new Exec(
     c = ExecConfig(
@@ -71,9 +72,9 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
       useBtbForConditionalBranches = config.useBtbForConditionalBranches
     )
   )
-  exec.io.regFetch << regfile.io.readRsp
+  exec.io.regFetch << regfile.io.readRsp.assertProps(checkPayloadInvariance = true)
   exec.io.insnFetch << (if (config.regFetch.isAsync) insnReadToExec
-                        else insnReadToExec.stage())
+                        else insnReadToExec.stage()).assertProps(checkPayloadInvariance = true)
 
   when(controller.io.rfWriteOverride.valid) {
     regfile.io.writeReq << controller.io.rfWriteOverride
@@ -81,8 +82,8 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
     regfile.io.writeReq << exec.io.regWriteback
   }
 
-  exec.io.dataMem.request >> io.dm.request
-  exec.io.dataMem.response << io.dm.response
+  exec.io.dataMem.request.assertProps(checkPayloadInvariance = true) >> io.dm.request
+  exec.io.dataMem.response << io.dm.response.assertProps(checkPayloadInvariance = true)
   exec.io.branchPcUpdater >> pcUpdater.getUpdater(2)
   controller.io.commitFire := exec.io.commitFire
 

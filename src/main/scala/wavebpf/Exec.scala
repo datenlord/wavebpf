@@ -3,6 +3,7 @@ package wavebpf
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.wishbone._
+import WbpfExt._
 
 object MemoryAccessWidth extends SpinalEnum(binarySequential) {
   val W1, W2, W4, W8 = newElement()
@@ -134,9 +135,9 @@ case class Exec(c: ExecConfig) extends Component {
 
   val memOutputFlow = memStage.io.output.toFlow
 
-  memStage.io.aluStage << aluStage.io.output
-  memStage.io.dataMem.request >> io.dataMem.request
-  memStage.io.dataMem.response << io.dataMem.response
+  memStage.io.aluStage << aluStage.io.output.assertProps(checkPayloadInvariance = true)
+  memStage.io.dataMem.request.assertProps(checkPayloadInvariance = true) >> io.dataMem.request
+  memStage.io.dataMem.response << io.dataMem.response.assertProps(checkPayloadInvariance = true)
   memOutputFlow
     .throwWhen(!memStage.io.output.payload.regWritebackValid)
     .translateWith(memStage.io.output.payload.regWriteback) >> io.regWriteback
@@ -217,10 +218,10 @@ case class ExecMemoryStage(
   if (c.splitAluMem) {
     val half = io.aluStage.stage()
     provideBypassResource(half.asFlow, 0)
-    aluOutput << half.s2mPipe()
+    aluOutput << half.s2mPipe().assertProps(checkPayloadInvariance = true)
     provideBypassResource(aluOutput.asFlow, 1)
   } else {
-    aluOutput << io.aluStage
+    aluOutput << io.aluStage.assertProps(checkPayloadInvariance = true)
   }
 
   val excRegInit = new CpuException()
@@ -264,7 +265,7 @@ case class ExecMemoryStage(
     nextExc := excReg
   }
 
-  var maskedAluOutput = aluOutput.throwWhen(nextExc.valid && !wasBranch)
+  val maskedAluOutput = aluOutput.throwWhen(nextExc.valid && !wasBranch)
 
   val (maskedAluOutputToMem, maskedAluOutputToStage) = StreamFork2(
     maskedAluOutput
@@ -326,7 +327,7 @@ case class ExecMemoryStage(
   val output = StreamJoin(maskedAluOutputStaged, dmRspMux)
     .translateWith(outData)
 
-  io.output << output
+  io.output << output.assertProps(checkPayloadInvariance = true)
 
   val bypassCtx = AluStageInsnContext(c)
   bypassCtx := maskedAluOutputStaged
@@ -760,7 +761,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     .continueWhen(!io.insnFetch.payload.ctx.flush || io.bypassEmpty)
     .translateWith(ctxOut)
 
-  io.output << outStream
+  io.output << outStream.assertProps(checkPayloadInvariance = true)
 
   /*when(!outStream.valid) {
     report(L"exec alu stall")
