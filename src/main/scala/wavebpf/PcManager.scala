@@ -141,6 +141,9 @@ class PcManager(c: InsnBufferConfig) extends Component {
     io.stream.payload.ctx.prediction.predictedTarget.assignDontCare()
   }
 
+  val rPendingUpdateValid = Reg(Bool()) init (false)
+  val rPendingUpdate = Reg(PcUpdateReq())
+
   when(io.stream.ready) {
     flush := False
 
@@ -162,12 +165,24 @@ class PcManager(c: InsnBufferConfig) extends Component {
     } else {
       currentPc := currentPc + 1
     }
+
+    when(rPendingUpdateValid) {
+      rPendingUpdateValid := False
+      currentPc := rPendingUpdate.pc
+      flush := rPendingUpdate.flush
+      flushReason := rPendingUpdate.flushReason
+    }
   }
 
   when(io.update.valid) {
-    currentPc := io.update.pc
-    flush := io.update.flush
-    flushReason := io.update.flushReason
+    when(io.stream.ready) {
+      currentPc := io.update.pc
+      flush := io.update.flush
+      flushReason := io.update.flushReason
+    } otherwise {
+      rPendingUpdateValid := True
+      rPendingUpdate := io.update.payload
+    }
 
     if (c.useBtb) {
       when(io.update.payload.branchSourceValid) {

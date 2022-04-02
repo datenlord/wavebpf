@@ -29,18 +29,25 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
   }
 
   val controller =
-    new Controller(insnBufferConfig = config.insnBuffer, regfetchConfig = config.regFetch, context = context)
+    new Controller(
+      insnBufferConfig = config.insnBuffer,
+      regfetchConfig = config.regFetch,
+      context = context
+    )
   controller.io.mmio << io.mmio
   controller.io.pcUpdater >> pcUpdater.getUpdater(1)
 
   val insnBuffer = new InsnBuffer(c = config.insnBuffer)
   controller.io.refill >> insnBuffer.io.refill
-  pcmgr.io.stream >> insnBuffer.io.readReq
+  pcmgr.io.stream
+    .assertProps(checkPayloadInvariance = true) >> insnBuffer.io.readReq
 
   val regfile = new Regfetch(c = config.regFetch)
 
-  controller.io.rfReplicaReadReq.assertProps(checkPayloadInvariance = true) >> regfile.io.replicaReadReq
-  controller.io.rfReplicaReadRsp << regfile.io.replicaReadRsp.assertProps(checkPayloadInvariance = true)
+  controller.io.rfReplicaReadReq
+    .assertProps(checkPayloadInvariance = true) >> regfile.io.replicaReadReq
+  controller.io.rfReplicaReadRsp << regfile.io.replicaReadRsp
+    .assertProps(checkPayloadInvariance = true)
 
   val regfileReadInput =
     RegGroupContext(c = config.regFetch, dataType = new Bundle)
@@ -75,6 +82,7 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
 
   exec.io.regFetch := regfile.io.readRsp.payload
   exec.io.insnFetch << insnBuffer.io.readRsp
+    .assertProps(checkPayloadInvariance = true)
 
   when(controller.io.rfWriteOverride.valid) {
     regfile.io.writeReq << controller.io.rfWriteOverride
@@ -83,7 +91,8 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
   }
 
   exec.io.dataMem.request >> io.dm.request
-  exec.io.dataMem.response << io.dm.response.assertProps(checkPayloadInvariance = true)
+  exec.io.dataMem.response << io.dm.response
+    .assertProps(checkPayloadInvariance = true)
   exec.io.branchPcUpdater >> pcUpdater.getUpdater(2)
   controller.io.commitFire := exec.io.commitFire
 
