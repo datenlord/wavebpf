@@ -134,11 +134,11 @@ case class Exec(c: ExecConfig) extends Component {
   val memOutputFlow = memStage.io.output.toFlow
 
   memStage.io.aluStage << aluStage.io.output
-    .assertProps(checkPayloadInvariance = true)
+    .check(payloadInvariance = true)
   memStage.io.dataMem.request
-    .assertProps(checkPayloadInvariance = true) >> io.dataMem.request
+    .check(payloadInvariance = true) >> io.dataMem.request
   memStage.io.dataMem.response << io.dataMem.response
-    .assertProps(checkPayloadInvariance = true)
+    .check(payloadInvariance = true)
   memOutputFlow
     .throwWhen(!memStage.io.output.payload.regWritebackValid)
     .translateWith(memStage.io.output.payload.regWriteback) >> io.regWriteback
@@ -219,10 +219,10 @@ case class ExecMemoryStage(
   if (c.splitAluMem) {
     val half = io.aluStage.stage()
     provideBypassResource(half.asFlow, 0)
-    aluOutput << half.s2mPipe().assertProps(checkPayloadInvariance = true)
+    aluOutput << half.s2mPipe().check(payloadInvariance = true)
     provideBypassResource(aluOutput.asFlow, 1)
   } else {
-    aluOutput << io.aluStage.assertProps(checkPayloadInvariance = true)
+    aluOutput << io.aluStage.check(payloadInvariance = true)
   }
 
   val excRegInit = new CpuException()
@@ -328,7 +328,7 @@ case class ExecMemoryStage(
   val output = StreamJoin(maskedAluOutputStaged, dmRspMux)
     .translateWith(outData)
 
-  io.output << output.assertProps(checkPayloadInvariance = true)
+  io.output << output.check(payloadInvariance = true)
 
   val bypassCtx = AluStageInsnContext(c)
   bypassCtx := maskedAluOutputStaged
@@ -761,7 +761,7 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     .continueWhen(!io.insnFetch.payload.ctx.flush || io.bypassEmpty)
     .translateWith(ctxOut)
 
-  io.output << outStream.assertProps(checkPayloadInvariance = true)
+  io.output << outStream.check(payloadInvariance = true)
 
   /*when(!outStream.valid) {
     report(L"exec alu stall")

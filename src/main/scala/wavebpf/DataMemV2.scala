@@ -204,14 +204,14 @@ object DataMemV2Port {
       x._1.request.translateWith(payload)
     })
     val arbStream = new StreamArbiterFactory().roundRobin.on(annotatedReq)
-    output.request << arbStream.assertProps(checkPayloadInvariance = true)
+    output.request << arbStream.check(payloadInvariance = true)
     val rspVec = Vec(inputs.map(_.response))
     val demux = StreamDemux(
       output.response,
       output.response.payload.ctx.resize(log2Up(inputs.length) bits),
       rspVec.length
     )
-    rspVec.zip(demux).foreach(x => x._1 << x._2.assertProps(checkPayloadInvariance = true))
+    rspVec.zip(demux).foreach(x => x._1 << x._2.check(payloadInvariance = true))
   }
 }
 
