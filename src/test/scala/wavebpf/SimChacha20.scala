@@ -4,7 +4,6 @@ import spinal.core._
 import spinal.sim._
 import spinal.core.sim._
 import scala.util.Random
-import java.security.SecureRandom
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -25,13 +24,12 @@ class SimChacha20Spec extends AnyFunSuite {
       )
       println("Code loaded.")
 
-      val rng = new SecureRandom()
       val key = new Array[Byte](32)
-      rng.nextBytes(key)
+      Random.nextBytes(key)
       val nonce = new Array[Byte](12)
-      rng.nextBytes(nonce)
+      Random.nextBytes(nonce)
       val data = new Array[Byte](100)
-      rng.nextBytes(data)
+      Random.nextBytes(data)
 
       var addr = 0x100
       dmWriteOnce(dut, 0x10, addr)

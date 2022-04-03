@@ -9,8 +9,8 @@ object DefaultWbpfConfig {
       pe = PeConfig(
         insnBuffer = InsnBufferConfig(
           addrWidth = 11,
-          useBtb = true,
-          btbSize = 12
+          useBtb = false,
+          btbSize = 0
         ),
         regFetch = RegfetchConfig(),
         splitAluMem = true,
@@ -29,8 +29,8 @@ object NoMemBypassWbpfConfig {
       pe = PeConfig(
         insnBuffer = InsnBufferConfig(
           addrWidth = 11,
-          useBtb = true,
-          btbSize = 12
+          useBtb = false,
+          btbSize = 0
         ),
         regFetch = RegfetchConfig(),
         splitAluMem = true,
@@ -48,8 +48,8 @@ object SmallWbpfConfig {
       pe = PeConfig(
         insnBuffer = InsnBufferConfig(
           addrWidth = 11,
-          useBtb = true,
-          btbSize = 12
+          useBtb = false,
+          btbSize = 0
         ),
         regFetch = RegfetchConfig(),
         splitAluMem = true,
@@ -61,14 +61,14 @@ object SmallWbpfConfig {
     )
 }
 
-object NoBtbWbpfConfig {
+object WithBtbWbpfConfig {
   def apply() =
     WbpfConfig(
       pe = PeConfig(
         insnBuffer = InsnBufferConfig(
           addrWidth = 11,
-          useBtb = false,
-          btbSize = 1
+          useBtb = true,
+          btbSize = 12
         ),
         regFetch = RegfetchConfig(),
         splitAluMem = true,

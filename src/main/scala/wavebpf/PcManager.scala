@@ -33,7 +33,7 @@ class PcManager(c: InsnBufferConfig) extends Component {
     val valid = Bool()
     val source = UInt(c.addrWidth bits)
     val target = UInt(c.addrWidth bits)
-    val lru = UInt(log2Up(c.btbSize) bits)
+    val lru = if(c.useBtb) UInt(log2Up(c.btbSize) bits) else null
   }
 
   val btb =

@@ -18,11 +18,13 @@ object SimUtil {
     val config: Seq[(String, WbpfConfig)] = Seq(
       ("default", DefaultWbpfConfig()),
       ("noMemBypass", NoMemBypassWbpfConfig()),
-      ("noBtb", NoBtbWbpfConfig())
+      ("withBtb", WithBtbWbpfConfig())
     )
     for ((name, c) <- config) {
       println("Running with config: " + name)
-      runWithAllBackends(new CustomWbpf(c))(body)
+      runWithAllBackends(
+        new CustomWbpf(c.copy(pe = c.pe.copy(reportCommit = false)))
+      )(body)
     }
   }
 
