@@ -120,7 +120,9 @@ case class Exec(c: ExecConfig) extends Component {
 
   val aluStage = new ExecAluStage(c)
   aluStage.io.bypassEmpty := rs1Bypass.empty && rs2Bypass.empty
+  aluStage.io.bypassHasMatch := rs1Bypass.hasMatch || rs2Bypass.hasMatch
   aluStage.io.regFetch := rfOverride
+  aluStage.io.regFetchNotBypassed := io.regFetch
   io.insnFetch.continueWhen(
     !rs1MemStallBypass.bypassed && !rs2MemStallBypass.bypassed
   ) >> aluStage.io.insnFetch
@@ -353,9 +355,11 @@ case class ExecMemoryStage(
 case class ExecAluStage(c: ExecConfig) extends Component {
   val io = new Bundle {
     val regFetch = in(RegGroupContext(c.regFetch, Bits(64 bits)))
+    val regFetchNotBypassed = in(RegGroupContext(c.regFetch, Bits(64 bits)))
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
     val output = master Stream (AluStageInsnContext(c))
     val bypassEmpty = in Bool ()
+    val bypassHasMatch = in Bool ()
   }
 
   val opcode = io.insnFetch.payload.insn(7 downto 0)
@@ -369,6 +373,14 @@ case class ExecAluStage(c: ExecConfig) extends Component {
 
   val operand2IsReg = opcode(3)
   val operand2 = Mux(sel = operand2IsReg, whenTrue = rs2, whenFalse = imm)
+  val operand2NotBypassed = Mux(
+    sel = operand2IsReg,
+    whenTrue = io.regFetchNotBypassed.rs2.data.asUInt,
+    whenFalse = imm
+  )
+
+  val waitUntilNoBypassMatch = Bool()
+  waitUntilNoBypassMatch := False
 
   val exc = new CpuExceptionSkeleton()
   exc.code.assignDontCare()
@@ -475,7 +487,10 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       if (c.multiplier) {
         regWritebackValid := True
         regWritebackData.index := rdIndex
-        regWritebackData.data := (rs1 * operand2)(63 downto 0).asBits
+        regWritebackData.data := (io.regFetchNotBypassed.rs1.data.asUInt * operand2NotBypassed)(
+          63 downto 0
+        ).asBits
+        waitUntilNoBypassMatch := True
       } else {
         reportBadInsn()
       }
@@ -757,11 +772,12 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     ctxOut.exc := stopExc
   }
 
-  // An instruction that has the `flush` flag set can re-activate a pipeline blocked by an
-  // exception. At this point there may still be some data in the bypassed pipeline registers,
-  // but it is invalid to use it. Here, we wait for the pipeline registers to empty out.
   val outStream = io.insnFetch
+    // An instruction that has the `flush` flag set can re-activate a pipeline blocked by an
+    // exception. At this point there may still be some data in the bypassed pipeline registers,
+    // but it is invalid to use it. Here, we wait for the pipeline registers to empty out.
     .continueWhen(!io.insnFetch.payload.ctx.flush || io.bypassEmpty)
+    .continueWhen(!waitUntilNoBypassMatch || !io.bypassHasMatch)
     .translateWith(ctxOut)
 
   io.output << outStream.check(payloadInvariance = true)
