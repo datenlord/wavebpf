@@ -49,6 +49,9 @@ case class AluStageInsnContext(
   val exc = new CpuExceptionSkeleton()
   val memory = new MemoryAccessReq(c)
   val br = BranchReq()
+  val mulOutput = Bits(64 bits)
+  val overrideRegWritebackWithMul = Bool()
+  val alu32Conversion = Bool()
 }
 
 case class MemoryAccessReq(
@@ -209,6 +212,34 @@ case class ExecMemoryStage(
       )
     }
   }
+
+  private def fixupRegWriteback(
+      input: Stream[AluStageInsnContext]
+  ): Stream[AluStageInsnContext] = {
+    val output = Stream(AluStageInsnContext(c))
+    val newPayload = input.payloadType()
+
+    val regWritebackOverride = RegContext(c.regFetch, Bits(64 bits))
+    regWritebackOverride.index := input.payload.regWriteback.index
+
+    val maybeMulOverride = Mux(
+      sel = input.payload.overrideRegWritebackWithMul,
+      whenTrue = input.payload.mulOutput,
+      whenFalse = input.payload.regWriteback.data
+    )
+
+    regWritebackOverride.data := Mux(
+      sel = input.payload.alu32Conversion,
+      whenTrue = maybeMulOverride(31 downto 0).resize(64 bits),
+      whenFalse = maybeMulOverride
+    )
+    newPayload.regWriteback := regWritebackOverride
+    newPayload.assignUnassignedByName(input.payload)
+    output << input.translateWith(newPayload)
+
+    output
+  }
+
   val io = new Bundle {
     val aluStage = Stream(AluStageInsnContext(c))
     val dataMem = DataMemV2Port()
@@ -222,12 +253,13 @@ case class ExecMemoryStage(
 
   val aluOutput = Stream(AluStageInsnContext(c))
   if (c.splitAluMem) {
-    val half = io.aluStage.stage()
+    val half = fixupRegWriteback(io.aluStage.stage())
+
     provideBypassResource(half.asFlow, 0)
     aluOutput << half.s2mPipe().check(payloadInvariance = true)
     provideBypassResource(aluOutput.asFlow, 1)
   } else {
-    aluOutput << io.aluStage.check(payloadInvariance = true)
+    aluOutput << fixupRegWriteback(io.aluStage.check(payloadInvariance = true))
   }
 
   val excRegInit = new CpuException()
@@ -423,6 +455,13 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     29 bits
   )
 
+  val mulOutput =
+    (io.regFetchNotBypassed.rs1.data.asUInt * operand2NotBypassed)(
+      63 downto 0
+    ).asBits
+  val overrideRegWritebackWithMul = Bool()
+  overrideRegWritebackWithMul := False
+
   val condEq = rs1 === operand2
   val condNe = rs1 =/= operand2
   val condLt = rs1 < operand2
@@ -485,11 +524,10 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     }
     is(M"0010-111", M"0010-100") { // 0x27/0x2f, dst *= imm
       if (c.multiplier) {
+        isAlu := True
         regWritebackValid := True
         regWritebackData.index := rdIndex
-        regWritebackData.data := (io.regFetchNotBypassed.rs1.data.asUInt * operand2NotBypassed)(
-          63 downto 0
-        ).asBits
+        overrideRegWritebackWithMul := True
         waitUntilNoBypassMatch := True
       } else {
         reportBadInsn()
@@ -702,14 +740,6 @@ case class ExecAluStage(c: ExecConfig) extends Component {
     }
   }
 
-  val regWritebackOverride = RegContext(c.regFetch, Bits(64 bits))
-  regWritebackOverride.index := regWritebackData.index
-  regWritebackOverride.data := Mux(
-    sel = isAlu & likeAlu32,
-    whenTrue = regWritebackData.data(31 downto 0).resize(64 bits),
-    whenFalse = regWritebackData.data
-  )
-
   // Do not issue a branch if our prediction is correct
   val brOverride = BranchReq()
   when(
@@ -757,10 +787,13 @@ case class ExecAluStage(c: ExecConfig) extends Component {
   ctxOut.regFetch := io.regFetch
   ctxOut.insnFetch := io.insnFetch
   ctxOut.regWritebackValid := regWritebackValid
-  ctxOut.regWriteback := regWritebackOverride
+  ctxOut.regWriteback := regWritebackData
   ctxOut.exc := exc
   ctxOut.memory := memory
   ctxOut.br := brOverride
+  ctxOut.alu32Conversion := isAlu && likeAlu32
+  ctxOut.mulOutput := mulOutput
+  ctxOut.overrideRegWritebackWithMul := overrideRegWritebackWithMul
 
   when(
     io.insnFetch.payload.ctx.flush && io.insnFetch.payload.ctx.flushReason === PcFlushReasonCode.STOP
