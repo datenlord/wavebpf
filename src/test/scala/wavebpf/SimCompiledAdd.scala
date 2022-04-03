@@ -11,9 +11,7 @@ class SimCompiledAddSpec extends AnyFunSuite {
   test("SimCompiledAdd") {
     import SimUtil._
     val config = DefaultWbpfConfig()
-    runWithAllBackends(
-      new CustomWbpf(config.copy(pe = config.pe.copy(reportCommit = true)))
-    ) { dut =>
+    runWithAllConfig { dut =>
       initDutForTesting(dut)
 
       val firstExc = dut.io.excOutput.head

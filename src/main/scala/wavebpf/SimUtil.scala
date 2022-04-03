@@ -8,8 +8,22 @@ object SimUtil {
   def runWithAllBackends[T <: Component](
       rtl: => T
   )(body: T => Unit): Unit = {
-    SimConfig.withIVerilog.doSim(rtl)(body)
+    // iverilog is too slow
+    // SimConfig.withIVerilog.doSim(rtl)(body)
+
     SimConfig.withVerilator.doSim(rtl)(body)
+  }
+
+  def runWithAllConfig(body: CustomWbpf => Unit): Unit = {
+    val config: Seq[(String, WbpfConfig)] = Seq(
+      ("default", DefaultWbpfConfig()),
+      ("noMemBypass", NoMemBypassWbpfConfig()),
+      ("noBtb", NoBtbWbpfConfig())
+    )
+    for ((name, c) <- config) {
+      println("Running with config: " + name)
+      runWithAllBackends(new CustomWbpf(c))(body)
+    }
   }
 
   def dmReadOnce(

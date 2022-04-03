@@ -10,7 +10,7 @@ class SimSumLoopSpec extends AnyFunSuite {
   // tests go here...
   test("SimSumLoop") {
     import SimUtil._
-    runWithAllBackends(new Wbpf) { dut =>
+    runWithAllConfig { dut =>
       initDutForTesting(dut)
 
       val firstExc = dut.io.excOutput.head

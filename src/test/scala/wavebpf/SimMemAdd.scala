@@ -10,7 +10,7 @@ class SimMemAddSpec extends AnyFunSuite {
   // tests go here...
   test("SimMemAdd") {
     import SimUtil._
-    runWithAllBackends(new Wbpf) { dut =>
+    runWithAllConfig { dut =>
       initDutForTesting(dut)
       var cycles = 0L
       dut.clockDomain.onSamplings {

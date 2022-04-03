@@ -97,24 +97,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
 
 }
 
-object DefaultWbpfConfig {
-  def apply() =
-    WbpfConfig(
-      pe = PeConfig(
-        insnBuffer = InsnBufferConfig(
-          addrWidth = 11,
-          useBtb = true,
-          btbSize = 12
-        ),
-        regFetch = RegfetchConfig(),
-        splitAluMem = true,
-        bypassMemOutput = true
-      ),
-      dataMemSize = 32768,
-      numPe = 4,
-      downsizeDataMemPort = false
-    )
-}
+
 class Wbpf extends CustomWbpf(DefaultWbpfConfig()) {}
 
 class WbpfSynth(config: WbpfConfig = DefaultWbpfConfig()) extends Component {
@@ -216,5 +199,16 @@ object WbpfVerilogSyncReset {
 object WbpfVerilogSyncResetHighFreq {
   def main(args: Array[String]) {
     SyncResetSpinalConfig.generateVerilog(new WbpfSynthHighFreq)
+  }
+}
+
+object WbpfVerilogSyncResetHighFreqSmall {
+  def main(args: Array[String]) {
+    val config = DefaultWbpfConfig()
+    SyncResetSpinalConfig.generateVerilog(
+      new WbpfSynthHighFreq(
+        SmallWbpfConfig()
+      )
+    )
   }
 }

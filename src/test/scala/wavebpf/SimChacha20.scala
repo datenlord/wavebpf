@@ -13,9 +13,7 @@ class SimChacha20Spec extends AnyFunSuite {
   test("SimChacha20") {
     import SimUtil._
     val config = DefaultWbpfConfig()
-    runWithAllBackends(
-      new CustomWbpf(config.copy(pe = config.pe.copy(reportCommit = false)))
-    ) { dut =>
+    runWithAllConfig { dut =>
       initDutForTesting(dut)
       val firstExc = dut.io.excOutput.head
 

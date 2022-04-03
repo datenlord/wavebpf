@@ -142,9 +142,7 @@ class SimIndirectSortSpec extends AnyFunSuite {
     }
 
     val config = DefaultWbpfConfig()
-    runWithAllBackends(
-      new CustomWbpf(config.copy(pe = config.pe.copy(reportCommit = false)))
-    ) { dut =>
+    runWithAllConfig { dut =>
       initDutForTesting(dut)
 
       val firstExc = dut.io.excOutput.head
