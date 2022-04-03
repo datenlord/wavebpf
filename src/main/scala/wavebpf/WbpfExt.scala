@@ -6,10 +6,8 @@ import spinal.lib._
 object WbpfExt {
   implicit class StreamExt[T <: Data](stream: Stream[T]) {
     def check(payloadInvariance: Boolean = false): Stream[T] = {
-      val rValid = RegInit(False)
+      val rValid = RegInit(False) setWhen (stream.valid) clearWhen (stream.fire)
       val rData = RegNextWhen(stream.payload, stream.valid && !rValid)
-
-      rValid setWhen (stream.valid && !rValid) clearWhen (stream.fire)
 
       val stack = Thread.currentThread().getStackTrace().mkString
       assert(

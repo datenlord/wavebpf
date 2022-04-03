@@ -35,7 +35,8 @@ case class ExecConfig(
     reportCommit: Boolean,
     bypassMemOutput: Boolean,
     context: PeContextData,
-    useBtbForConditionalBranches: Boolean
+    useBtbForConditionalBranches: Boolean,
+    multiplier: Boolean
 )
 
 case class AluStageInsnContext(
@@ -191,7 +192,8 @@ case class ExecMemoryStage(
       net.provide(
         2,
         subprio,
-        stage.valid && stage.regWritebackValid && stage.regWriteback.index === net.srcKey,
+        stage.valid && stage.regWritebackValid,
+        stage.regWriteback.index === net.srcKey,
         stage.regWriteback.data
       )
     }
@@ -199,7 +201,8 @@ case class ExecMemoryStage(
       net.provide(
         2,
         subprio,
-        stage.valid && stage.memory.rd === net.srcKey && stage.memory.valid && stage.memory.writeback,
+        stage.valid && stage.memory.valid && stage.memory.writeback,
+        stage.memory.rd === net.srcKey,
         True
       )
     }
@@ -469,13 +472,13 @@ case class ExecAluStage(c: ExecConfig) extends Component {
       regWritebackData.data := (rs1 - operand2).asBits
     }
     is(M"0010-111", M"0010-100") { // 0x27/0x2f, dst *= imm
-      /*
-      regWritebackValid := True
-      regWritebackData.index := rdIndex
-      regWritebackData.data := (rs1 * operand2)(63 downto 0).asBits
-       */
-      // multiplication not implemented
-      reportBadInsn()
+      if (c.multiplier) {
+        regWritebackValid := True
+        regWritebackData.index := rdIndex
+        regWritebackData.data := (rs1 * operand2)(63 downto 0).asBits
+      } else {
+        reportBadInsn()
+      }
     }
     is(M"0011-111", M"0011-100") { // 0x37/0x3f, dst /= imm
       // division not implemented

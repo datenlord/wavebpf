@@ -12,21 +12,30 @@ class BypassNetwork[K <: Data, V <: Data](
   val srcValue = valueType()
   val bypassed = valueType()
   val empty = Bool()
+  val hasMatch = Bool()
 
-  val providers = new ArrayBuffer[(Int, Int, Bool, V)]()
+  val providers = new ArrayBuffer[(Int, Int, Bool, Bool, V)]()
 
-  def provide(priority: Int, subpriority: Int, valid: Bool, data: V) = {
-    providers += ((priority, subpriority, valid, data))
+  def provide(
+      priority: Int,
+      subpriority: Int,
+      valid: Bool,
+      matches: Bool,
+      data: V
+  ) = {
+    providers += ((priority, subpriority, valid, matches, data))
   }
 
   Component.current.afterElaboration {
     bypassed := srcValue
     empty := True
+    hasMatch := False
+
     providers
       .sortBy({ x => (x._1, x._2) })
       .reverse
       .foreach((x) => {
-        val (prio, subprio, valid, data) = x
+        val (prio, subprio, valid, matches, data) = x
 
         when(valid) {
           /*report(
@@ -41,8 +50,11 @@ class BypassNetwork[K <: Data, V <: Data](
             data
           )
         )*/
-          bypassed := data
           empty := False
+          when(matches) {
+            hasMatch := True
+            bypassed := data
+          }
         }
       })
   }

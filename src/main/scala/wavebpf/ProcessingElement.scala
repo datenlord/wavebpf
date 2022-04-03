@@ -12,7 +12,8 @@ case class PeConfig(
     splitAluMem: Boolean = false,
     reportCommit: Boolean = true,
     bypassMemOutput: Boolean = false,
-    useBtbForConditionalBranches: Boolean = true
+    useBtbForConditionalBranches: Boolean = true,
+    multiplier: Boolean = true
 )
 
 case class PeContextData(coreIndex: Int, numPe: Int)
@@ -76,7 +77,8 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
       reportCommit = config.reportCommit,
       bypassMemOutput = config.bypassMemOutput,
       context = context,
-      useBtbForConditionalBranches = config.useBtbForConditionalBranches
+      useBtbForConditionalBranches = config.useBtbForConditionalBranches,
+      multiplier = config.multiplier
     )
   )
 
