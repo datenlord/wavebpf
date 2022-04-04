@@ -9,15 +9,15 @@ object WbpfExt {
       val rValid = RegInit(False) setWhen (stream.valid) clearWhen (stream.fire)
       val rData = RegNextWhen(stream.payload, stream.valid && !rValid)
 
-      val stack = Thread.currentThread().getStackTrace().mkString
+      val stack = ScalaLocated.long.replace("\n", "\\n")
       assert(
         !(!stream.valid && rValid),
-        "Stream transaction disappeared:\\n" + ScalaLocated.long.replace("\n", "\\n")
+        "Stream transaction disappeared:\\n" + stack
       )
       if (payloadInvariance) {
         assert(
           !rValid || rData === stream.payload,
-          "Stream transaction payload changed:\\n" + ScalaLocated.long.replace("\n", "\\n")
+          "Stream transaction payload changed:\\n" + stack
         )
       }
 
