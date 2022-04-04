@@ -12,6 +12,7 @@ object SimUtil {
     // SimConfig.withIVerilog.doSim(rtl)(body)
 
     SimConfig.withVerilator.doSim(rtl)(body)
+    //SimConfig.withVerilator.doSim(rtl = rtl, name = "test", seed = 42)(body)
   }
 
   def runWithAllConfig(body: CustomWbpf => Unit): Unit = {

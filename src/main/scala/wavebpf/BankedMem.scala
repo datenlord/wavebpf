@@ -194,24 +194,49 @@ case class BankedMemPort() extends Bundle with IMasterSlave {
 }
 
 object BankedMemPort {
-  def arbitrate(inputs: Seq[BankedMemPort], output: BankedMemPort) {
+  def arbitrate(
+      c: BankedMemConfig,
+      inputs: Seq[BankedMemPort],
+      outputs: Seq[BankedMemPort]
+  ) {
     assert(log2Up(inputs.length) <= BankedMemRequest().ctx.getBitsWidth)
 
-    val annotatedReq = inputs.zipWithIndex.map(x => {
+    val annotatedReqs = inputs.zipWithIndex.map(x => {
       val payload = BankedMemRequest()
       payload.ctx := U(x._2)
       payload.assignUnassignedByName(x._1.request.payload)
-      x._1.request.translateWith(payload)
+      x._1.request.translateWith(payload).setBlocked()
     })
-    val arbStream = new StreamArbiterFactory().roundRobin.on(annotatedReq)
-    output.request << arbStream.check(payloadInvariance = true)
+    for ((output, bankIndex) <- outputs.zipWithIndex) {
+      val bankReqs = annotatedReqs.map(x => {
+        val s = Stream(x.payloadType)
+        when(
+          Bool(c.numBanks == 1) || U(
+            bankIndex,
+            log2Up(c.numBanks) bits
+          ) === (x.payload.addr >> 3).resized
+        ) {
+          s << x
+        } otherwise {
+          s.setIdle()
+        }
+        s
+      })
+      val arbStream = new StreamArbiterFactory().roundRobin.on(bankReqs)
+      output.request << arbStream.check(payloadInvariance = true)
+    }
     val rspVec = Vec(inputs.map(_.response))
-    val demux = StreamDemux(
-      output.response,
-      output.response.payload.ctx.resize(log2Up(inputs.length) bits),
-      rspVec.length
-    )
-    rspVec.zip(demux).foreach(x => x._1 << x._2.check(payloadInvariance = true))
+    rspVec.foreach(x => x.setIdle())
+    for (output <- outputs) {
+      output.response.setBlocked()
+      for ((inputRsp, inputIndex) <- rspVec.zipWithIndex) {
+        when(
+          output.response.valid && output.response.payload.ctx === inputIndex
+        ) {
+          inputRsp << output.response
+        }
+      }
+    }
   }
 }
 
@@ -241,9 +266,9 @@ case class BankedMemCore(c: BankedMemConfig) extends Component {
     val rsp = master(Stream(BankedMemResponse()))
   }
   val reqControl = ReqControl.compute(io.req.payload)
-  val memBody = Mem(Bits(64 bits), c.numWords)
+  val memBody = Mem(Bits(64 bits), c.numWordsPerBank)
 
-  val wordAddr = io.req.addr >> 3
+  val wordAddr = (io.req.addr >> 3) >> log2Up(c.numBanks)
   memBody.write(
     address = wordAddr.resized,
     data = io.req.precomputedStrbValid.mux(
@@ -265,7 +290,7 @@ case class BankedMemCore(c: BankedMemConfig) extends Component {
 
   val stagedReq = ioReqToStage.stage()
   val readRsp = memBody.streamReadSync(
-    ioReqToRead.translateWith(wordAddr.resize(log2Up(c.numWords)))
+    ioReqToRead.translateWith(wordAddr.resize(log2Up(c.numWordsPerBank)))
   )
   val stagedReqControl = ReqControl.compute(stagedReq.payload)
 
@@ -311,10 +336,12 @@ case class BankedMemCore(c: BankedMemConfig) extends Component {
 
 case class BankedMem(c: BankedMemConfig) extends Area {
   val users = ArrayBuffer[BankedMemPort]()
-  val dmPort = BankedMemPort()
-  val impl = BankedMemCore(c)
-  dmPort.request >> impl.io.req
-  impl.io.rsp >> dmPort.response
+  val dmPorts = (0 until c.numBanks).map(_ => BankedMemPort())
+  val impls = (0 until c.numBanks).map(_ => BankedMemCore(c))
+  for ((dmPort, impl) <- dmPorts.zip(impls)) {
+    dmPort.request >> impl.io.req
+    impl.io.rsp >> dmPort.response
+  }
 
   def use(): BankedMemPort = {
     val port = BankedMemPort()
@@ -324,14 +351,21 @@ case class BankedMem(c: BankedMemConfig) extends Area {
 
   Component.current.afterElaboration {
     println("Banked mem " + c.name + " has " + users.length + " user(s)")
-    BankedMemPort.arbitrate(users, dmPort)
+    BankedMemPort.arbitrate(c, users, dmPorts)
   }
 }
 
 case class BankedMemConfig(
     numWords: Int,
-    name: String
-)
+    name: String,
+    numBanks: Int
+) {
+  assert(isPow2(numBanks))
+  assert(numWords > 0 && numBanks > 0 && numWords % numBanks == 0)
+
+  val bankAddrWidth = log2Up(numBanks)
+  val numWordsPerBank = numWords / numBanks
+}
 
 object BankedMemAxi4PortConfig {
   def apply() = Axi4Config(

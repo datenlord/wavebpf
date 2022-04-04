@@ -10,14 +10,16 @@ import wavebpf.util._
 case class WbpfConfig(
     pe: PeConfig,
     dataMemSize: Int,
-    numPe: Int
+    numPe: Int,
+    dataMemNumBanks: Int = 4
 )
 
 class CustomWbpf(config: WbpfConfig) extends Component {
   val dataMemory = new BankedMem(
     c = BankedMemConfig(
       numWords = config.dataMemSize,
-      name = "dataMemory"
+      name = "dataMemory",
+      numBanks = config.dataMemNumBanks
     )
   )
   val io = new Bundle {
