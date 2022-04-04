@@ -25,7 +25,7 @@ case class ProcessingElement(config: PeConfig, context: PeContextData)
   val io = new Bundle {
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
     val excOutput = out(new CpuException())
-    val dm = master(DataMemV2Port())
+    val dm = master(BankedMemPort())
     val excInterrupt = out(Bool())
   }
 

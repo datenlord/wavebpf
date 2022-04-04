@@ -17,8 +17,7 @@ object DefaultWbpfConfig {
         bypassMemOutput = true
       ),
       dataMemSize = 32768,
-      numPe = 4,
-      downsizeDataMemPort = false
+      numPe = 4
     )
 }
 
@@ -37,8 +36,7 @@ object NoMemBypassWbpfConfig {
         bypassMemOutput = false
       ),
       dataMemSize = 32768,
-      numPe = 4,
-      downsizeDataMemPort = false
+      numPe = 4
     )
 }
 
@@ -56,8 +54,7 @@ object SmallWbpfConfig {
         bypassMemOutput = true
       ),
       dataMemSize = 16384,
-      numPe = 2,
-      downsizeDataMemPort = false
+      numPe = 2
     )
 }
 
@@ -75,7 +72,6 @@ object WithBtbWbpfConfig {
         bypassMemOutput = true
       ),
       dataMemSize = 32768,
-      numPe = 4,
-      downsizeDataMemPort = false
+      numPe = 4
     )
 }

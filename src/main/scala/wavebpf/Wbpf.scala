@@ -10,14 +10,14 @@ import wavebpf.util._
 case class WbpfConfig(
     pe: PeConfig,
     dataMemSize: Int,
-    numPe: Int,
-    downsizeDataMemPort: Boolean
+    numPe: Int
 )
 
 class CustomWbpf(config: WbpfConfig) extends Component {
-  val dataMemory = new DataMemV2(
-    c = DataMemConfig(
-      numWords = config.dataMemSize
+  val dataMemory = new BankedMem(
+    c = BankedMemConfig(
+      numWords = config.dataMemSize,
+      name = "dataMemory"
     )
   )
   val io = new Bundle {
@@ -27,8 +27,7 @@ class CustomWbpf(config: WbpfConfig) extends Component {
     )
     val dataMemAxi4 = slave(
       Axi4(
-        if (config.downsizeDataMemPort) DataMemV2Axi4DownsizedPortConfig()
-        else DataMemV2Axi4PortConfig()
+        BankedMemAxi4PortConfig()
       )
     )
     val dataMem = slave(dataMemory.use())
@@ -82,21 +81,14 @@ class CustomWbpf(config: WbpfConfig) extends Component {
 
   io.excOutput.zip(peList).foreach(x => x._1 := x._2.io.excOutput)
 
-  val dataMemAxi4 = Axi4(DataMemV2Axi4PortConfig())
+  val dataMemAxi4 = Axi4(BankedMemAxi4PortConfig())
 
   dataMemory.use().toAxi4WriteOnly() << dataMemAxi4
   dataMemory.use().toAxi4ReadOnly() << dataMemAxi4
 
-  if (config.downsizeDataMemPort) {
-    val dmUpsizer = Axi4Upsizer(io.dataMemAxi4.config, dataMemAxi4.config, 4)
-    io.dataMemAxi4 >> dmUpsizer.io.input
-    dmUpsizer.io.output >> dataMemAxi4
-  } else {
-    io.dataMemAxi4 >> dataMemAxi4
-  }
+  io.dataMemAxi4 >> dataMemAxi4
 
 }
-
 
 class Wbpf extends CustomWbpf(DefaultWbpfConfig()) {}
 
@@ -119,7 +111,7 @@ class WbpfSynthHighFreq(config: WbpfConfig = DefaultWbpfConfig())
     extends Component {
   val io = new Bundle {
     val mmio = slave(AxiLite4(MMIOBusConfigV2()))
-    val dataMemAxi4 = slave(Axi4(DataMemV2Axi4DownsizedPortConfig()))
+    val dataMemAxi4 = slave(Axi4(BankedMemAxi4PortConfig().copy(dataWidth = 32)))
     val excInterrupt = out Bool ()
     val logic_clk = in Bool ()
   }

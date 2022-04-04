@@ -8,7 +8,7 @@ import spinal.lib.bus.amba4.axi._
 import spinal.lib.fsm._
 import WbpfExt._
 
-case class DataMemRequest() extends Bundle {
+case class BankedMemRequest() extends Bundle {
   val write = Bool()
   val addr = UInt(32 bits)
   val data = Bits(64 bits)
@@ -18,14 +18,14 @@ case class DataMemRequest() extends Bundle {
   val precomputedStrb = Bits(8 bits)
 }
 
-case class DataMemResponse() extends Bundle {
+case class BankedMemResponse() extends Bundle {
   val data = Bits(64 bits)
   val ctx = UInt(4 bits)
 }
 
-case class DataMemV2Port() extends Bundle with IMasterSlave {
-  val request = Stream(DataMemRequest())
-  val response = Stream(DataMemResponse())
+case class BankedMemPort() extends Bundle with IMasterSlave {
+  val request = Stream(BankedMemRequest())
+  val response = Stream(BankedMemResponse())
 
   override def asMaster(): Unit = {
     master(request)
@@ -34,13 +34,13 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
 
   def toAxi4ReadOnly(): Axi4ReadOnly = {
     val area = new Area {
-      val axiMaster = Axi4ReadOnly(DataMemV2Axi4PortConfig())
+      val axiMaster = Axi4ReadOnly(BankedMemAxi4PortConfig())
       var axi = WbpfUtil.axi4Pipe(axiMaster)
       axi.setBlocked()
       request.setIdle()
       response.freeRun()
 
-      val arSnapshot = Reg(Axi4Ar(DataMemV2Axi4PortConfig()))
+      val arSnapshot = Reg(Axi4Ar(BankedMemAxi4PortConfig()))
       val issueRemaining = Reg(UInt(arSnapshot.len.getBitsWidth bits))
       val shouldIssue = Reg(Bool())
 
@@ -121,10 +121,10 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
 
   def toAxi4WriteOnly(): Axi4WriteOnly = {
     val area = new Area {
-      val axiMaster = Axi4WriteOnly(DataMemV2Axi4PortConfig())
+      val axiMaster = Axi4WriteOnly(BankedMemAxi4PortConfig())
       val axi = WbpfUtil.axi4Pipe(axiMaster)
       axi.setBlocked()
-      val awSnapshot = Reg(Axi4Aw(DataMemV2Axi4PortConfig()))
+      val awSnapshot = Reg(Axi4Aw(BankedMemAxi4PortConfig()))
 
       request.setIdle()
       response.freeRun()
@@ -193,12 +193,12 @@ case class DataMemV2Port() extends Bundle with IMasterSlave {
   }
 }
 
-object DataMemV2Port {
-  def arbitrate(inputs: Seq[DataMemV2Port], output: DataMemV2Port) {
-    assert(log2Up(inputs.length) <= DataMemRequest().ctx.getBitsWidth)
+object BankedMemPort {
+  def arbitrate(inputs: Seq[BankedMemPort], output: BankedMemPort) {
+    assert(log2Up(inputs.length) <= BankedMemRequest().ctx.getBitsWidth)
 
     val annotatedReq = inputs.zipWithIndex.map(x => {
-      val payload = DataMemRequest()
+      val payload = BankedMemRequest()
       payload.ctx := U(x._2)
       payload.assignUnassignedByName(x._1.request.payload)
       x._1.request.translateWith(payload)
@@ -215,7 +215,7 @@ object DataMemV2Port {
   }
 }
 
-case class DataMemV2Core(c: DataMemConfig) extends Component {
+case class BankedMemCore(c: BankedMemConfig) extends Component {
   case class ReqControl() extends Bundle {
     val misalignment = UInt(3 bits)
     val alignedMask = Bits(8 bits)
@@ -226,7 +226,7 @@ case class DataMemV2Core(c: DataMemConfig) extends Component {
   }
 
   object ReqControl {
-    def compute(req: DataMemRequest): ReqControl = {
+    def compute(req: BankedMemRequest): ReqControl = {
       val ret = ReqControl()
       ret.misalignment := req.addr(2 downto 0)
       val aligned = MemoryAccessWidth.alignedMask(req.width)
@@ -237,8 +237,8 @@ case class DataMemV2Core(c: DataMemConfig) extends Component {
   }
 
   val io = new Bundle {
-    val req = slave(Stream(DataMemRequest()))
-    val rsp = master(Stream(DataMemResponse()))
+    val req = slave(Stream(BankedMemRequest()))
+    val rsp = master(Stream(BankedMemResponse()))
   }
   val reqControl = ReqControl.compute(io.req.payload)
   val memBody = Mem(Bits(64 bits), c.numWords)
@@ -269,7 +269,7 @@ case class DataMemV2Core(c: DataMemConfig) extends Component {
   )
   val stagedReqControl = ReqControl.compute(stagedReq.payload)
 
-  val rspData = new DataMemResponse()
+  val rspData = new BankedMemResponse()
   rspData.data := stagedReq.precomputedStrbValid.mux(
     (
       False,
@@ -309,41 +309,34 @@ case class DataMemV2Core(c: DataMemConfig) extends Component {
   }*/
 }
 
-case class DataMemV2(c: DataMemConfig) extends Area {
-  val users = ArrayBuffer[DataMemV2Port]()
-  val dmPort = DataMemV2Port()
-  val impl = DataMemV2Core(c)
+case class BankedMem(c: BankedMemConfig) extends Area {
+  val users = ArrayBuffer[BankedMemPort]()
+  val dmPort = BankedMemPort()
+  val impl = BankedMemCore(c)
   dmPort.request >> impl.io.req
   impl.io.rsp >> dmPort.response
 
-  def use(): DataMemV2Port = {
-    val port = DataMemV2Port()
+  def use(): BankedMemPort = {
+    val port = BankedMemPort()
     users += port
     port
   }
 
   Component.current.afterElaboration {
-    println("DM has " + users.length + " users")
-    DataMemV2Port.arbitrate(users, dmPort)
+    println("Banked mem " + c.name + " has " + users.length + " user(s)")
+    BankedMemPort.arbitrate(users, dmPort)
   }
 }
 
-case class DataMemConfig(
-    numWords: Int
+case class BankedMemConfig(
+    numWords: Int,
+    name: String
 )
 
-object DataMemV2Axi4PortConfig {
+object BankedMemAxi4PortConfig {
   def apply() = Axi4Config(
     addressWidth = 32,
     dataWidth = 64,
-    idWidth = 16
-  )
-}
-
-object DataMemV2Axi4DownsizedPortConfig {
-  def apply() = Axi4Config(
-    addressWidth = 32,
-    dataWidth = 32,
     idWidth = 16
   )
 }

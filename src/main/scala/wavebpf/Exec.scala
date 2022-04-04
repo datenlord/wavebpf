@@ -89,7 +89,7 @@ case class Exec(c: ExecConfig) extends Component {
   val io = new Bundle {
     val regFetch = in(RegGroupContext(c.regFetch, Bits(64 bits)))
     val regWriteback = master Flow (RegContext(c.regFetch, Bits(64 bits)))
-    val dataMem = master(DataMemV2Port())
+    val dataMem = master(BankedMemPort())
     val insnFetch = slave Stream (InsnBufferReadRsp(c.insnFetch))
     val excOutput = out(new CpuException())
     val branchPcUpdater = master Flow (PcUpdateReq())
@@ -242,7 +242,7 @@ case class ExecMemoryStage(
 
   val io = new Bundle {
     val aluStage = Stream(AluStageInsnContext(c))
-    val dataMem = DataMemV2Port()
+    val dataMem = BankedMemPort()
     val output = Stream(MemoryStageInsnContext(c))
     val excOutput = new CpuException()
     val excAck = Bool()
@@ -309,7 +309,7 @@ case class ExecMemoryStage(
     maskedAluOutput
   )
 
-  val memReq = DataMemRequest()
+  val memReq = BankedMemRequest()
   memReq.addr := maskedAluOutput.memory.addr
   memReq.write := maskedAluOutput.memory.store
   memReq.ctx.assignDontCare()
@@ -351,7 +351,7 @@ case class ExecMemoryStage(
     outData.br.addr := (io.dataMem.response.payload.data.asUInt >> 3).resized
   }
 
-  val dmRspAlwaysValid = Stream(DataMemResponse())
+  val dmRspAlwaysValid = Stream(BankedMemResponse())
   dmRspAlwaysValid.valid := True
   dmRspAlwaysValid.payload.assignDontCare()
 
