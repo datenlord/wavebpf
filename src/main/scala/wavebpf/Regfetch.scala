@@ -36,9 +36,10 @@ case class Regfetch(c: RegfetchConfig) extends Component {
   val bank0 = Mem(Bits(64 bits), c.numRegs)
   val bank1 = Mem(Bits(64 bits), c.numRegs)
   val replica = Mem(Bits(64 bits), c.numRegs)
-  io.replicaReadRsp << replica
-    .streamReadSync(
-      io.replicaReadReq
+
+  io.replicaReadRsp << io.replicaReadReq
+    .translateWith(
+      replica.readAsync(io.replicaReadReq.payload, readUnderWrite = writeFirst)
     )
     .pipelined(m2s = true, s2m = true)
 
