@@ -21,6 +21,13 @@ object DefaultWbpfConfig {
     )
 }
 
+object DefaultWbpfConfigWithoutMemoryBanking {
+  def apply() = {
+    val c = DefaultWbpfConfig()
+    c.copy(dataMemNumBanks = 1)
+  }
+}
+
 
 object NoMemBypassWbpfConfig {
   def apply() =

@@ -225,15 +225,66 @@ object BankedMemPort {
       val arbStream = new StreamArbiterFactory().roundRobin.on(bankReqs)
       output.request << arbStream.check(payloadInvariance = true)
     }
+
+    // Re-ordering.
+    /*val cycles = Reg(UInt(64 bits)) init(0)
+    cycles := cycles + 1*/
+    val robs =
+      if (c.numBanks == 1) null
+      else
+        (0 until inputs.length).map(_ =>
+          new StreamFifoLowLatency(
+            dataType = UInt(log2Up(c.numBanks) bits),
+            depth = c.numBanks,
+            latency = 1
+          )
+        )
+    if (robs != null) {
+      for (rob <- robs) {
+        rob.io.push.setIdle()
+        rob.io.pop.setBlocked()
+        assert(
+          !rob.io.push.valid || rob.io.push.ready,
+          "BankedMemPort: the ROB FIFO is full"
+        )
+      }
+      for ((output, outputIndex) <- outputs.zipWithIndex) {
+        for ((rob, robIndex) <- robs.zipWithIndex) {
+          when(output.request.fire) {
+            val targetRobIndex = output.request.payload.ctx
+            when(targetRobIndex === robIndex) {
+              rob.io.push.valid := True
+              rob.io.push.payload := outputIndex
+              // report(Seq("ROB push output=" + outputIndex + " input=", targetRobIndex, "cycles=", cycles))
+            }
+          }
+        }
+      }
+    }
     val rspVec = Vec(inputs.map(_.response))
     rspVec.foreach(x => x.setIdle())
-    for (output <- outputs) {
+    for ((output, outputIndex) <- outputs.zipWithIndex) {
       output.response.setBlocked()
       for ((inputRsp, inputIndex) <- rspVec.zipWithIndex) {
-        when(
+        val outputMatchesInput =
           output.response.valid && output.response.payload.ctx === inputIndex
-        ) {
-          inputRsp << output.response
+        if (robs != null) {
+          val rob = robs(inputIndex)
+          when(outputMatchesInput) {
+            // report(Seq("ROB pop cycles=", cycles))
+            assert(
+              rob.io.pop.valid,
+              "BankedMemPort: the ROB FIFO is empty - rob index " + inputIndex
+            )
+            when(rob.io.pop.valid && rob.io.pop.payload === outputIndex) {
+              inputRsp << output.response
+              rob.io.pop.ready := output.response.ready
+            }
+          }
+        } else {
+          when(outputMatchesInput) {
+            inputRsp << output.response
+          }
         }
       }
     }

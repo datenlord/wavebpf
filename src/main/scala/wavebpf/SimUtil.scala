@@ -18,6 +18,7 @@ object SimUtil {
   def runWithAllConfig(body: CustomWbpf => Unit): Unit = {
     val config: Seq[(String, WbpfConfig)] = Seq(
       ("default", DefaultWbpfConfig()),
+      ("defaultWithoutBanking", DefaultWbpfConfigWithoutMemoryBanking()),
       ("noMemBypass", NoMemBypassWbpfConfig()),
       ("withBtb", WithBtbWbpfConfig())
     )
