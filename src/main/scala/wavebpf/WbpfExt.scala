@@ -5,7 +5,10 @@ import spinal.lib._
 
 object WbpfExt {
   implicit class StreamExt[T <: Data](stream: Stream[T]) {
-    def check(payloadInvariance: Boolean = false): Stream[T] = {
+    def check(
+        payloadInvariance: Boolean = false,
+        payloadChangeFormatter: (T, T) => Seq[Any] = null
+    ): Stream[T] = {
       val rValid = RegInit(False) setWhen (stream.valid) clearWhen (stream.fire)
       val rData = RegNextWhen(stream.payload, stream.valid && !rValid)
 
@@ -15,9 +18,13 @@ object WbpfExt {
         "Stream transaction disappeared:\\n" + stack
       )
       if (payloadInvariance) {
+        val baseMsg = "Stream transaction payload changed:\\n" + stack
+        val msg: Seq[Any] =
+          if (payloadChangeFormatter == null) Seq(baseMsg)
+          else Seq(baseMsg) ++ payloadChangeFormatter(rData, stream.payload)
         assert(
           !rValid || rData === stream.payload,
-          "Stream transaction payload changed:\\n" + stack
+          msg
         )
       }
 

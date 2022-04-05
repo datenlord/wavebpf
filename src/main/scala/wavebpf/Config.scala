@@ -54,7 +54,8 @@ object SmallWbpfConfig {
         bypassMemOutput = true
       ),
       dataMemSize = 16384,
-      numPe = 2
+      numPe = 2,
+      dataMemNumBanks = 2
     )
 }
 
